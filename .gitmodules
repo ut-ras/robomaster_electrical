@@ -1,0 +1,21 @@
+[submodule "rm_electrical-turret"]
+	path = rm_electrical-turret
+	url = https://github.com/ut-ras/rm_electrical-turret.git
+[submodule "rm_electrical-chassis"]
+	path = rm_electrical-chassis
+	url = https://github.com/ut-ras/rm_electrical-chassis.git
+[submodule "rm_electrical-armor_plate"]
+	path = rm_electrical-armor_plate
+	url = https://github.com/ut-ras/rm_electrical-armor_plate.git
+[submodule "rm_electrical-supercap"]
+	path = rm_electrical-supercap
+	url = https://github.com/ut-ras/rm_electrical-supercap.git
+[submodule "rm_electrical-sentry_turret"]
+	path = rm_electrical-sentry_turret
+	url = https://github.com/ut-ras/rm_electrical-sentry_turret.git
+[submodule "rm_electrical-sentry_chassis"]
+	path = rm_electrical-sentry_chassis
+	url = https://github.com/ut-ras/rm_electrical-sentry_chassis.git
+[submodule "KiCad_Library"]
+	path = KiCad_Library
+	url = https://github.com/ut-ras/KiCad_Library.git
