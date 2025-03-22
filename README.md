@@ -7,7 +7,8 @@ Please read the [Wiki]( https://github.com/ut-ras/robomaster_electrical/wiki) pa
 
 ## Workflow
 
-<ins>**Do not clone this repository**</ins> if you intend to work on one of the projects in the listed submodules.
+<ins>**Do not clone this repository**</ins> if you intend to work on one of the projects in the listed submodules.\
 Instead, click on the submodule for the project you want to work on to go to its repository, then clone using the green `<> Code` button.
 
-If working in the repository on the master schematics, update the project submodules using `update.sh`. This will discard any changes in the submodule directories and get the latest `main` commit for each project.
+Work in this repository only on the master schematics, and update the project submodules using `update.sh`\
+This will discard **all** changes in the submodule directories and get the latest `main` commit for each project.
