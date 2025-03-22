@@ -2,27 +2,34 @@
 	path = Turret
 	url = https://github.com/ut-ras/rm_electrical-turret.git
 	branch = main
+	update = merge
 [submodule "rm_electrical-chassis"]
 	path = Chassis
 	url = https://github.com/ut-ras/rm_electrical-chassis.git
 	branch = main
+	update = merge
 [submodule "rm_electrical-armor_plate"]
 	path = Armor_Plate
 	url = https://github.com/ut-ras/rm_electrical-armor_plate.git
 	branch = main
+	update = merge
 [submodule "rm_electrical-supercap"]
 	path = Supercap
 	url = https://github.com/ut-ras/rm_electrical-supercap.git
 	branch = main
+	update = merge
 [submodule "rm_electrical-sentry_turret"]
 	path = Sentry_Turret
 	url = https://github.com/ut-ras/rm_electrical-sentry_turret.git
 	branch = main
+	update = merge
 [submodule "rm_electrical-sentry_chassis"]
 	path = Sentry_Chassis
 	url = https://github.com/ut-ras/rm_electrical-sentry_chassis.git
 	branch = main
+	update = merge
 [submodule "KiCad_Library"]
 	path = KiCad_Library
 	url = https://github.com/ut-ras/KiCad_Library.git
 	branch = main
+	update = merge
