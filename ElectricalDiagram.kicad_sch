@@ -7852,7 +7852,7 @@
 				(justify left bottom)
 			)
 		)
-		(property "Sheetfile" "rm_electrical-chassis/Chassis.kicad_sch"
+		(property "Sheetfile" "Chassis/Chassis.kicad_sch"
 			(at 76.2 246.9646 0)
 			(effects
 				(font
@@ -8504,7 +8504,7 @@
 				(justify left bottom)
 			)
 		)
-		(property "Sheetfile" "rm_electrical-turret/Turret.kicad_sch"
+		(property "Sheetfile" "Turret/Turret.kicad_sch"
 			(at 88.9 130.1246 0)
 			(effects
 				(font
