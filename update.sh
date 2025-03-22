@@ -5,6 +5,7 @@
 # Exit immediately if a command exits with a non-zero status.
 set -e
 
-echo "Updating all project submodules to their latest commit..." 
+echo "Setting all project submodules to their latest commit..." 
+git submodule foreach 'git reset --hard && git clean -fd'
 git submodule update --remote --recursive
 echo "Projects updated successfully."
