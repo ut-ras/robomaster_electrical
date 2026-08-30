@@ -13,11 +13,6 @@
 	url = https://github.com/ut-ras/rm_electrical-armor_plate.git
 	branch = main
 	update = checkout
-[submodule "rm_electrical-supercap"]
-	path = Supercap
-	url = https://github.com/ut-ras/rm_electrical-supercap.git
-	branch = main
-	update = checkout
 [submodule "rm_electrical-sentry_turret"]
 	path = Sentry_Turret
 	url = https://github.com/ut-ras/rm_electrical-sentry_turret.git
@@ -33,3 +28,6 @@
 	url = https://github.com/ut-ras/KiCad_Library.git
 	branch = main
 	update = checkout
+[submodule "rm_electrical-supercap_v2"]
+	path = rm_electrical-supercap_v2
+	url = https://github.com/ut-ras/rm_electrical-supercap_v2.git
