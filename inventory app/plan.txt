@@ -1,1 +1,107 @@
+Meetings over Thanksgiving Break: M, T, Th, S 
 
+Trajetory: photo --> object detection --> send to spread sheet --> search feature --> quantity ~~ (very end with removing parts) 
+C# - Coddy Tech's Online C# Compiler, .NET Fiddle, or Programiz (for phone) 
+
+Timeline: 
+M - set up plan
+T - set up the basics, get camera to work and take a photo
+Th - extract the part number and send number to spreadsheet, get scrap the web for info on the parts and populate the spreadsheet
+S - get the quantity box added and maybe work on the part checkout feature
+
+basics on setting C# on phone: https://www.google.com/search?q=C%23+app+to+take+a+photo+from+the+phone+from+code+in+vs+code&sca_esv=4f7e46a88555357a&biw=1454&bih=755&sxsrf=AKL5yDhfw3AV1hOUk-MSmvgt42lt7F8adQ%3A1795463046420&ei=hpcEa6-PGdKfqtsPv4qdqA0&uact=5&oq=C%23+app+to+take+a+photo+from+the+phone+from+code+in+vs+code&gs_lp=Egxnd3Mtd2l6LXNlcnAiOkMjIGFwcCB0byB0YWtlIGEgcGhvdG8gZnJvbSB0aGUgcGhvbmUgZnJvbSBjb2RlIGluIHZzIGNvZGUyBRAAGO8FMgUQABjvBTIFEAAY7wUyBRAAGO8FMgUQABjvBUikGVAAWOQXcAJ4AJABAJgBpQGgAasEqgEDMi4zuAEDyAEA-AEBmAIHoALjBMICCBAAGIAEGKIEwgIIECEYoAEYwwSYAwCSBwMzLjSgB5INsgcDMS40uAfRBMIHBTAuMi41yAcegAgB&sclient=gws-wiz-serp
+
+object detection: https://www.google.com/search?q=api+call+for+gemini+to+C%23+for+image+detection&sca_esv=404a6062959aa475&sxsrf=AKL5yDhqrDliYoZRB0GoO8FrB7aUkLdbHA%3A1795463568168&ei=kJkEa4XeCaizmtkPuO3d6A4&biw=1454&bih=755&uact=5&oq=api+call+for+gemini+to+C%23+for+image+detection&gs_lp=Egxnd3Mtd2l6LXNlcnAiLWFwaSBjYWxsIGZvciBnZW1pbmkgdG8gQyMgZm9yIGltYWdlIGRldGVjdGlvbjIFECEYoAEyBRAhGKABMgUQIRigAUj7IVD-BljgIHACeAGQAQCYAYEBoAHVDaoBBDEzLja4AQPIAQD4AQGYAhWgAoQPwgIKEAAYRxjWBBiwA8ICFxAuGNwGGLgGGNoGGNgCGMgDGLAD2AEBwgIFECEYnwXCAgUQIRirApgDAIgGAZAGCroGBAgBGBmSBwUxMC4xMaAHylCyBwQ4LjExuAfpDsIHBjItMTkuMsgHZIAIAQ&sclient=gws-wiz-serp
+
+text detection: https://www.google.com/search?q=api+call+for+gemini+to+C%23+for+image+detection+for+text&sca_esv=404a6062959aa475&biw=1454&bih=755&sxsrf=AKL5yDhL5JGdjKaB9sEC9w3mYK_L_dvAJg%3A1795463589783&ei=pZkEa9SwL_C2qtsP8JiEeQ&uact=5&oq=api+call+for+gemini+to+C%23+for+image+detection+for+text&gs_lp=Egxnd3Mtd2l6LXNlcnAiNmFwaSBjYWxsIGZvciBnZW1pbmkgdG8gQyMgZm9yIGltYWdlIGRldGVjdGlvbiBmb3IgdGV4dDIFECEYoAEyBRAhGKABMgUQIRigATIFECEYoAEyBRAhGKABMgUQIRirAki4DFCrA1jPC3ABeAGQAQCYAX-gAcQGqgEDNi4zuAEDyAEA-AEBmAIKoAKfB8ICChAAGEcY1gQYsAPCAg4QABjkAhjWBBiwA9gBAcICFxAuGNwGGLgGGNoGGNgCGMgDGLAD2AEBmAMAiAYBkAYOugYGCAEQARgJkgcDNi40oAeGMbIHAzUuNLgHjQfCBwUyLTkuMcgHNoAIAQ&sclient=gws-wiz-serp
+
+web scrapping: https://www.google.com/search?q=how+to+search+the+web+for+data+from+C%23+in+vs+code&oq=how+to+search+the+web+for+data+from+C%23+in+vs+code&gs_lcrp=EgZjaHJvbWUyBggAEEUYOTIHCAEQIRigATIHCAIQIRigATIHCAMQIRigATIHCAQQIRigATIHCAUQIRigATIHCAYQIRiPAtIBCTEyNzgzajBqN6gCALACAA&sourceid=chrome&source=chrome.ob&ie=UTF-8
+
+Claude prompt: 
+# Robotics team component inventory app
+
+Build a mobile web app that works on iPhone and Android. We are starting from
+an empty repo and a blank Google Sheet. We have existing Mouser bags and expect
+new DigiKey bags. Both suppliers must work in the first release.
+
+## 1. Scan a package
+
+Let a teammate take a photo, upload one, or enter a part number manually.
+Detect the supplier from the printed label and let the user correct it.
+Use OCR to extract the supplier part number, manufacturer part number,
+manufacturer name, description, and printed quantity when available.
+Read recognized product barcodes where useful. Keep the photo visible during
+review so the user can correct a character without retaking it.
+
+Use both attached photos as scanner acceptance tests:
+
+| Supplier | Supplier part number | Manufacturer | Manufacturer part number | Printed quantity |
+|---|---|---|---|---:|
+| Mouser | 771-74LVC244APW-T | Nexperia | 74LVC244APW,118 | 12 |
+| DigiKey | WM20054-ND | Molex | 0387236506 | 2 |
+
+Preserve the comma and suffix in the Nexperia number and the leading zero in
+the Molex number through scanning, catalog lookup, saving, and searching.
+Treat the online DigiKey photo as demo data.
+
+## 2. Identify the part and retrieve its specs
+
+Look up the supplier SKU using Mouser Search or DigiKey ProductDetails,
+according to the bag. Cross-check the returned manufacturer and full part
+number against the label. If the results disagree or several variants match,
+show the choices for review. If the first catalog has gaps, use the second
+catalog only when the manufacturer and full part number match exactly.
+
+Save every technical attribute available for the matched part, including its
+original name, value, unit, and source. Include product and datasheet links.
+Show a short category-specific summary and let users expand “All specs.”
+
+- Capacitors: capacitance, tolerance, rated voltage, dielectric, package, ESR.
+- Resistors: resistance, tolerance, power rating, temperature coefficient.
+- Inductors: inductance, tolerance, current ratings, DC resistance.
+- ICs: function, supply voltage range, channels, pin count, package.
+- Connectors and jumpers: positions, pitch, contact material, finish.
+
+Preserve asymmetric tolerances such as −20%/+80%, absolute tolerances such
+as ±0.1 pF, minimum and maximum ratings, and stated test conditions. Mark
+missing specs as unknown. Allow manual entries with a datasheet page or source
+link, and preserve verified edits when refreshing catalog data.
+
+## 3. Save to one shared Google Sheet
+
+Create tabs for Parts, Supplier SKUs, Specs, and Locations. Use one catalog
+record per verified manufacturer and full manufacturer part number. Associate
+it with any Mouser or DigiKey SKUs and all drawers where the team stores it.
+Write part numbers as text.
+
+On the review screen, let the member choose a drawer and confirm Save.
+If both suppliers sold us the exact same component, searching either SKU
+should open the same part and show its locations. If two components only
+share electrical ratings, keep their catalog records separate. Make retried
+saves safe. Keep credentials server-side and limit writes to team members.
+
+## 4. Search the team's inventory
+
+Search by either supplier SKU, manufacturer part number, description,
+category, specs, or drawer. Show the location directly in the results.
+
+Support searches like “100 nF capacitor, at least 25 V, ±10% or tighter.”
+Treat 100 nF and 0.1 µF as equivalent. Test that a 50 V, ±5% part qualifies
+and that a 16 V part, a ±20% part, and a part with unknown tolerance do not.
+
+## 5. Add quantity tracking last
+
+Track stock per part and drawer. When receiving stock, suggest the printed
+quantity and ask the member to confirm the actual count. This matters for
+old Mouser bags that may already be open. Record additions and removals with
+member, time, bin, and quantity. Handle duplicate submissions and concurrent
+removals safely. Scanning a bag by itself must never change stock.
+
+## First delivery
+
+Use a single mobile-friendly TypeScript project. Build the smallest complete
+demo: scan each sample photo, review the exact part and its catalog specs,
+save both to different drawers in a test Google Sheet, then find both from
+a second phone. Also test a capacitor by manual part-number entry to verify
+tolerance, voltage, and capacitance search. Document setup, credentials, and
+which checks used live APIs versus demo data.
