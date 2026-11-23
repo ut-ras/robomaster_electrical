@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "dgSpecHash": "AxUXEN2fm/s=",
+  "success": true,
+  "projectFilePath": "C:\\Users\\annax\\robomaster_electrical\\inventory app\\inventory app\\inventory app.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\annax\\.nuget\\packages\\microsoft.aspnetcore.app.internal.assets\\10.0.15\\microsoft.aspnetcore.app.internal.assets.10.0.15.nupkg.sha512"
+  ],
+  "logs": []
+}
