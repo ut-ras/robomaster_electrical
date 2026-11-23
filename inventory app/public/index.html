@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1d4ed8">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Parts Inventory</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="top">
+    <strong>Parts Inventory</strong>
+    <span id="modes" class="modes"></span>
+    <button id="signout" class="link" hidden>Sign out</button>
+  </header>
+  <main id="view"></main>
+  <nav class="tabs" id="tabs" hidden>
+    <button data-tab="scan" class="on">Scan</button>
+    <button data-tab="search">Search</button>
+  </nav>
+  <script type="module" src="/src/client/app.ts"></script>
+</body>
+</html>

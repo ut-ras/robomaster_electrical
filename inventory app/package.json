@@ -1,0 +1,14 @@
+{
+  "name": "robotics-parts-inventory",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Mobile web app for scanning Mouser/DigiKey bags into a shared Google Sheet inventory.",
+  "engines": { "node": ">=22.18" },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env src/server/main.ts",
+    "test": "node --test \"test/**/*.test.ts\"",
+    "demo:e2e": "node --env-file-if-exists=.env scripts/demo-e2e.ts",
+    "sheets:init": "node --env-file-if-exists=.env scripts/init-sheet.ts"
+  }
+}
