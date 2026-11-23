@@ -9,6 +9,8 @@ T - set up the basics, get camera to work and take a photo
 Th - extract the part number and send number to spreadsheet, get scrap the web for info on the parts and populate the spreadsheet
 S - get the quantity box added and maybe work on the part checkout feature
 
+* For future, look into inventorying other parts
+
 basics on setting C# on phone: https://www.google.com/search?q=C%23+app+to+take+a+photo+from+the+phone+from+code+in+vs+code&sca_esv=4f7e46a88555357a&biw=1454&bih=755&sxsrf=AKL5yDhfw3AV1hOUk-MSmvgt42lt7F8adQ%3A1795463046420&ei=hpcEa6-PGdKfqtsPv4qdqA0&uact=5&oq=C%23+app+to+take+a+photo+from+the+phone+from+code+in+vs+code&gs_lp=Egxnd3Mtd2l6LXNlcnAiOkMjIGFwcCB0byB0YWtlIGEgcGhvdG8gZnJvbSB0aGUgcGhvbmUgZnJvbSBjb2RlIGluIHZzIGNvZGUyBRAAGO8FMgUQABjvBTIFEAAY7wUyBRAAGO8FMgUQABjvBUikGVAAWOQXcAJ4AJABAJgBpQGgAasEqgEDMi4zuAEDyAEA-AEBmAIHoALjBMICCBAAGIAEGKIEwgIIECEYoAEYwwSYAwCSBwMzLjSgB5INsgcDMS40uAfRBMIHBTAuMi41yAcegAgB&sclient=gws-wiz-serp
 
 object detection: https://www.google.com/search?q=api+call+for+gemini+to+C%23+for+image+detection&sca_esv=404a6062959aa475&sxsrf=AKL5yDhqrDliYoZRB0GoO8FrB7aUkLdbHA%3A1795463568168&ei=kJkEa4XeCaizmtkPuO3d6A4&biw=1454&bih=755&uact=5&oq=api+call+for+gemini+to+C%23+for+image+detection&gs_lp=Egxnd3Mtd2l6LXNlcnAiLWFwaSBjYWxsIGZvciBnZW1pbmkgdG8gQyMgZm9yIGltYWdlIGRldGVjdGlvbjIFECEYoAEyBRAhGKABMgUQIRigAUj7IVD-BljgIHACeAGQAQCYAYEBoAHVDaoBBDEzLja4AQPIAQD4AQGYAhWgAoQPwgIKEAAYRxjWBBiwA8ICFxAuGNwGGLgGGNoGGNgCGMgDGLAD2AEBwgIFECEYnwXCAgUQIRirApgDAIgGAZAGCroGBAgBGBmSBwUxMC4xMaAHylCyBwQ4LjExuAfpDsIHBjItMTkuMsgHZIAIAQ&sclient=gws-wiz-serp
