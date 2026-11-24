@@ -39,6 +39,7 @@ button:disabled { opacity: .55; }
 .badge.warn { background: var(--warn-bg); color: var(--warn); }
 .badge.bad { background: var(--bad-bg); color: var(--bad); }
 .badge.drawer { background: var(--accent); color: var(--accent-ink); font-weight: 600; font-size: 13px; }
+.badge.unassigned { background: var(--chip); color: var(--muted); border: 1px dashed var(--line); font-weight: 600; font-size: 13px; }
 .notice { padding: 10px 12px; border-radius: 8px; margin: 8px 0; font-size: 14px; }
 .notice.warn { background: var(--warn-bg); color: var(--warn); }
 .notice.bad { background: var(--bad-bg); color: var(--bad); }

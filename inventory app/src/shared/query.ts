@@ -4,10 +4,11 @@
 import type { Category, InventoryPart, Spec } from './types.ts';
 import { pickSpec } from './specs.ts';
 import { approxEqual, normText, worstTolerancePct } from './units.ts';
+import { DIMENSION_KEYS, parseThreadSize, sameThread, takeHardwareTerms, type HardwareConstraint } from './hardware.ts';
 
 export interface ValueConstraint { kind: 'value'; unit: string; op: 'eq' | 'ge' | 'le'; value: number; text: string }
 export interface TolConstraint { kind: 'tol'; maxPct?: number; maxAbs?: number; unit?: string; text: string }
-export type Constraint = ValueConstraint | TolConstraint;
+export type Constraint = ValueConstraint | TolConstraint | HardwareConstraint;
 
 export interface ParsedQuery { constraints: Constraint[]; category?: Category; terms: string[] }
 
@@ -20,6 +21,13 @@ const CATEGORY_WORDS: [RegExp, Category][] = [
   [/^(inductors?|chokes?)$/i, 'inductor'],
   [/^(connectors?|headers?|jumpers?|terminals?)$/i, 'connector'],
   [/^(ics?|chips?)$/i, 'ic'],
+  // Hardware. Singular "pin" stays a search word so "8 pin header" still finds connectors.
+  [/^screws?$/i, 'screw'],
+  [/^bolts?$/i, 'bolt'],
+  [/^nuts?$/i, 'nut'],
+  [/^washers?$/i, 'washer'],
+  [/^pins$/i, 'pin'],
+  [/^manifolds?$/i, 'manifold'],
 ];
 
 const STOP = new Set(['or', 'and', 'at', 'least', 'most', 'tighter', 'better', 'than', 'with', 'a', 'an', 'the', 'of', 'min', 'minimum', 'max', 'maximum', 'tolerance', 'tol', 'rated', 'rating', 'more', 'less', 'higher', 'lower', 'up', 'to', 'over', 'under', 'in', 'for']);
@@ -29,9 +37,11 @@ const PFX = String.raw`(p|n|u|µ|μ|m|k|K|M)?`;
 const UNIT = String.raw`(F|Ω|H|VDC|V|A|W)`;
 
 export function parseQuery(input: string): ParsedQuery {
+  // Hardware sizes first ("M3 x 8 mm", "1/4-20 x 3/4"), so "8 mm" and "1/4" are not read as anything else.
+  const hw = takeHardwareTerms(normText(input));
+  const constraints: Constraint[] = [...hw.constraints];
   // "1/10W" -> "0.1 W" so fractional power ratings parse like decimal ones.
-  let q = normText(input).replace(/(?<![\w.\/])(\d+)\s*\/\s*(\d+)\s*W(?![a-zA-Z])/g, (_, a, b) => `${Number(a) / Number(b)} W`);
-  const constraints: Constraint[] = [];
+  let q = hw.rest.replace(/(?<![\w.\/])(\d+)\s*\/\s*(\d+)\s*W(?![a-zA-Z])/g, (_, a, b) => `${Number(a) / Number(b)} W`);
   const take = (re: RegExp, fn: (m: RegExpExecArray) => void) => {
     let m: RegExpExecArray | null;
     while ((m = re.exec(q))) { fn(m); q = q.slice(0, m.index) + ' ' + q.slice(m.index + m[0].length); re.lastIndex = 0; }
@@ -99,6 +109,33 @@ function nominal(part: InventoryPart): number | undefined {
 export interface ConstraintResult { constraint: Constraint; ok: boolean; why: string }
 
 export function checkConstraint(part: InventoryPart, c: Constraint): ConstraintResult {
+  if (c.kind === 'thread') {
+    // A bare "M1" may be a drawer name rather than an M1 thread.
+    if (c.pitch === undefined && c.tpi === undefined && part.locations.some((l) => l.drawer.toUpperCase() === c.text.toUpperCase())) {
+      return { constraint: c, ok: true, why: `drawer ${c.text}` };
+    }
+    const s = pickSpec(part.specs, 'thread_size');
+    const t = s && parseThreadSize(s.value, /imperial/i.test(pickSpec(part.specs, 'thread_system')?.value ?? '') ? 'imperial' : undefined);
+    if (!t) return { constraint: c, ok: false, why: 'thread size unknown' };
+    if (!sameThread(t, c.thread)) return { constraint: c, ok: false, why: `thread ${s!.value}` };
+    if (c.pitch !== undefined) {
+      const p = pickSpec(part.specs, 'thread_pitch');
+      if (p?.num === undefined || !approxEqual(p.num, c.pitch, 1e-3)) return { constraint: c, ok: false, why: p ? `pitch ${p.value}` : 'pitch unknown' };
+    }
+    if (c.tpi !== undefined) {
+      const p = pickSpec(part.specs, 'tpi');
+      if (p?.num !== c.tpi) return { constraint: c, ok: false, why: p ? `${p.value} TPI` : 'TPI unknown' };
+    }
+    return { constraint: c, ok: true, why: `thread ${s!.value}` };
+  }
+  if (c.kind === 'dim') {
+    const keys = c.key ? [c.key] : DIMENSION_KEYS;
+    for (const k of keys) {
+      const s = pickSpec(part.specs, k);
+      if (s?.num !== undefined && approxEqual(s.num, c.value, 1e-3)) return { constraint: c, ok: true, why: `${s.name} ${s.value}` };
+    }
+    return { constraint: c, ok: false, why: c.key ? `${c.key} not ${c.text}` : `no ${c.text} dimension` };
+  }
   if (c.kind === 'tol') {
     const tolSpec = pickSpec(part.specs, 'tolerance');
     if (!tolSpec?.tol) return { constraint: c, ok: false, why: 'tolerance unknown' };
@@ -133,7 +170,7 @@ export function checkConstraint(part: InventoryPart, c: Constraint): ConstraintR
 
 function haystack(p: InventoryPart): string {
   return [
-    p.partId, p.manufacturer, p.mpn, p.description, p.category,
+    p.partId, p.name ?? '', p.manufacturer, p.mpn, p.description, p.category,
     ...p.skus.map((s) => `${s.sku} ${s.supplier}`),
     ...p.locations.map((l) => `drawer ${l.drawer} ${l.drawer}`),
     ...p.specs.map((s) => `${s.name} ${s.value}`),
@@ -147,7 +184,7 @@ export function search(parts: InventoryPart[], input: string): SearchHit[] {
   if (!q) return parts.map((part) => ({ part, score: 0, checks: [] }));
   const lower = q.toLowerCase();
   // Exact identifier hits first: either supplier SKU or the full manufacturer part number.
-  const exact = parts.filter((p) => p.mpn.toLowerCase() === lower || p.skus.some((s) => s.sku.toLowerCase() === lower));
+  const exact = parts.filter((p) => (p.mpn && p.mpn.toLowerCase() === lower) || p.partId.toLowerCase() === lower || p.skus.some((s) => s.sku.toLowerCase() === lower));
   if (exact.length) return exact.map((part) => ({ part, score: 100, checks: [] }));
 
   const parsed = parseQuery(q);

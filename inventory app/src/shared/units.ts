@@ -63,12 +63,29 @@ export function parseQuantity(text: string): Quantity | undefined {
   return parseQuantities(text)[0];
 }
 
-/** Lengths printed as mm or inches, e.g. '0.100" (2.54mm)'. Returns metres. */
+/** An inch amount as printed: "1-1/2", "1 1/2", "5/16", "0.25", ".25", "2". Mixed numbers need the dash or a space. */
+export const INCH_NUMBER = String.raw`(?:\d+(?:\s+|\s*-\s*)\d+\/\d+|\d+\/\d+|\d+(?:\.\d+)?|\.\d+)`;
+
+export function inchValue(text: string): number | undefined {
+  const t = text.trim();
+  const mixed = /^(\d+)(?:\s+|\s*-\s*)(\d+)\/(\d+)$/.exec(t);
+  if (mixed) return Number(mixed[1]) + Number(mixed[2]) / Number(mixed[3]);
+  const frac = /^(\d+)\/(\d+)$/.exec(t);
+  if (frac) return Number(frac[2]) ? Number(frac[1]) / Number(frac[2]) : undefined;
+  return /^(\d+(?:\.\d+)?|\.\d+)$/.test(t) ? parseFloat(t) : undefined;
+}
+
+const INCH_UNIT = String.raw`(?:"|”|″|''|-?\s*in(?:ch(?:es)?)?\b\.?)`;
+const INCH_RE = new RegExp(String.raw`(?<![\d./])(${INCH_NUMBER})\s*${INCH_UNIT}`, 'i');
+
+/** Lengths printed in mm, cm or inches: '0.100" (2.54mm)', "8 mm", '5/16"', "1-1/2 in", '3/4-inch'. Returns metres. */
 export function parseLength(text: string): number | undefined {
-  const mm = /(\d+(?:\.\d+)?)\s*mm\b/.exec(text);
+  const mm = /(\d+(?:\.\d+)?|\.\d+)\s*mm\b/i.exec(text);
   if (mm) return parseFloat(mm[1]) / 1000;
-  const inch = /(\d*\.?\d+)\s*(?:"|in\b)/.exec(text);
-  if (inch) return parseFloat(inch[1]) * 0.0254;
+  const cm = /(\d+(?:\.\d+)?|\.\d+)\s*cm\b/i.exec(text);
+  if (cm) return parseFloat(cm[1]) / 100;
+  const inch = INCH_RE.exec(text);
+  if (inch) { const v = inchValue(inch[1]); if (v !== undefined) return v * 0.0254; }
   return undefined;
 }
 

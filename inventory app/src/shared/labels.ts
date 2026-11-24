@@ -2,12 +2,15 @@
 // Part numbers are kept verbatim: commas, suffixes and leading zeros are significant.
 
 import type { BarcodeHit, FieldValue, LabelFields, OcrLine, Supplier } from './types.ts';
+import { detectMcMaster, parseMcMasterTexts } from './mcmaster.ts';
 
 export function detectSupplier(text: string, barcodes: string[] = []): { value: Supplier; reason: string } | undefined {
   const all = `${text}\n${barcodes.join('\n')}`;
   if (/mouser/i.test(all) || /mouser\s*p\s*\/?\s*n/i.test(all)) return { value: 'mouser', reason: 'label text mentions Mouser' };
   if (/digi\s*-?\s*key/i.test(all)) return { value: 'digikey', reason: 'label text mentions DigiKey' };
   if (/\b[0-9A-Z][0-9A-Z.\-/#]*-ND\b/.test(all)) return { value: 'digikey', reason: 'found a DigiKey "-ND" part number' };
+  const mcm = detectMcMaster(all);
+  if (mcm) return { value: 'mcmaster', reason: mcm };
   if (/\b\d{2,3}-[A-Z0-9][A-Z0-9\-,./#]{3,}/.test(all) && /mfg\s*p\/?n/i.test(all)) return { value: 'mouser', reason: 'Mouser-style "NNN-" part number with MFG P/N field' };
   return undefined;
 }
@@ -297,11 +300,22 @@ function judgeOcr(out: LabelFields, supplier: Supplier | undefined) {
   if (guesses.sku || guesses.mpn) out.guesses = guesses;
 }
 
-export function parseLabel(text: string, barcodes: (string | BarcodeHit)[] = [], supplierOverride?: Supplier, lines: OcrLine[] = []): LabelFields {
+/**
+ * `altTexts` are extra OCR passes of the same photo (other sizes / contrast). Only McMaster labels use them:
+ * those have no part-number barcodes, so agreement between passes is the only cross-check.
+ */
+export function parseLabel(text: string, barcodes: (string | BarcodeHit)[] = [], supplierOverride?: Supplier, lines: OcrLine[] = [], altTexts: string[] = []): LabelFields {
   const hits: BarcodeHit[] = barcodes.map((b) => (typeof b === 'string' ? { text: b } : b)).filter((b) => b && typeof b.text === 'string' && b.text.trim());
   hits.forEach((b) => { b.text = b.text.trim(); });
-  const detected = supplierOverride ? { value: supplierOverride, reason: 'chosen by user' } : detectSupplier(text, hits.map((b) => b.text));
+  const detected = supplierOverride ? { value: supplierOverride, reason: 'chosen by user' } : detectSupplier([text, ...altTexts].join('\n'), hits.map((b) => b.text));
   const supplier = detected?.value;
+  if (supplier === 'mcmaster') {
+    const out = parseMcMasterTexts([text, ...altTexts]);
+    out.supplier = detected;
+    const codes = [...new Set(hits.map((b) => b.text))].filter((t) => t !== out.sku?.value);
+    if (codes.length) out.unassigned = codes;
+    return out;
+  }
   let out: LabelFields = supplier === 'digikey' ? parseDigikeyText(text) : supplier === 'mouser' ? parseMouserText(text) : {};
   if (!supplier) {
     const m = parseMouserText(text), d = parseDigikeyText(text);

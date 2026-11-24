@@ -5,6 +5,20 @@ import { formatSI, parseCondition, parseLength, parseQuantities, parseRange, par
 
 /** Ordered: the first matching pattern wins, so specific patterns come before generic ones. */
 const KEY_PATTERNS: [RegExp, string][] = [
+  // mechanical hardware (before the electronics patterns, so "Thread pitch" is not a connector pitch)
+  [/^(thread size|for screw size|screw size)$/i, 'thread_size'],
+  [/^thread system$/i, 'thread_system'],
+  [/^thread pitch$/i, 'thread_pitch'],
+  [/^(threads per inch|tpi)$/i, 'tpi'],
+  [/^length$/i, 'length'],
+  [/^head (style|type)$/i, 'head_style'],
+  [/^(inner|inside) diameter$|^id$/i, 'inner_diameter'],
+  [/^(outer|outside) diameter$|^od$/i, 'outer_diameter'],
+  [/^thickness$/i, 'thickness'],
+  [/^diameter$/i, 'diameter'],
+  [/^material$/i, 'material'],
+  [/^(outlets|number of outlets)$/i, 'outlets'],
+  [/^(pipe thread|pipe size|connections?)$/i, 'pipe_thread'],
   [/^capacitance$/i, 'capacitance'],
   [/^resistance$/i, 'resistance'],
   [/^inductance$/i, 'inductance'],
@@ -54,7 +68,11 @@ const KEY_UNIT: Record<string, string> = {
   power: 'W', current_rating: 'A', current_sat: 'A',
 };
 
-const INTEGER_KEYS = new Set(['channels', 'pin_count', 'positions', 'bits_per_element']);
+const INTEGER_KEYS = new Set(['channels', 'pin_count', 'positions', 'bits_per_element', 'tpi', 'outlets']);
+/** Physical sizes, parsed to metres from mm, cm or inch text (fractions allowed). */
+const LENGTH_KEYS = new Set(['pitch', 'thread_pitch', 'length', 'diameter', 'inner_diameter', 'outer_diameter', 'thickness']);
+/** Plain words; not parsed for numbers or tolerances. */
+const TEXT_KEYS = new Set(['thread_size', 'thread_system', 'head_style', 'material', 'pipe_thread']);
 
 /** Build a Spec from a raw name/value pair, keeping the original strings and adding parsed fields. */
 export function makeSpec(name: string, value: string, source: SpecSource, extra: Partial<Spec> = {}): Spec {
@@ -73,7 +91,9 @@ export function makeSpec(name: string, value: string, source: SpecSource, extra:
   } else if (key === 'tempco') {
     const m = /(\d+(?:\.\d+)?|\.\d+)\s*ppm/i.exec(v);
     if (m) { spec.num = parseFloat(m[1]); spec.unit = 'ppm/°C'; }
-  } else if (key === 'pitch') {
+  } else if (key && TEXT_KEYS.has(key)) {
+    // keep as text: "M3", "1/4 NPT × 1/8 NPT" must not be read as electrical quantities
+  } else if (key && LENGTH_KEYS.has(key)) {
     const len = parseLength(v);
     if (len !== undefined) { spec.num = len; spec.unit = 'm'; }
   } else if (key === 'operating_temp') {
@@ -201,6 +221,44 @@ const SUMMARY: Record<Category, SummaryRow[]> = {
   other: [
     { label: 'Package', keys: ['package'] },
   ],
+  screw: [
+    { label: 'Thread size', keys: ['thread_size'] },
+    { label: 'Pitch', keys: ['thread_pitch', 'tpi'] },
+    { label: 'Length', keys: ['length'] },
+    { label: 'Head style', keys: ['head_style'] },
+    { label: 'Material', keys: ['material'] },
+  ],
+  bolt: [
+    { label: 'Thread size', keys: ['thread_size'] },
+    { label: 'Pitch', keys: ['thread_pitch', 'tpi'] },
+    { label: 'Length', keys: ['length'] },
+    { label: 'Head style', keys: ['head_style'] },
+    { label: 'Material', keys: ['material'] },
+  ],
+  nut: [
+    { label: 'Thread size', keys: ['thread_size'] },
+    { label: 'Pitch', keys: ['thread_pitch', 'tpi'] },
+    { label: 'Material', keys: ['material'] },
+  ],
+  washer: [
+    { label: 'Inner diameter', keys: ['inner_diameter'] },
+    { label: 'Outer diameter', keys: ['outer_diameter'] },
+    { label: 'Thickness', keys: ['thickness'] },
+    { label: 'Material', keys: ['material'] },
+  ],
+  pin: [
+    { label: 'Diameter', keys: ['diameter'] },
+    { label: 'Length', keys: ['length'] },
+    { label: 'Material', keys: ['material'] },
+  ],
+  manifold: [
+    { label: 'Pipe thread', keys: ['pipe_thread'] },
+    { label: 'Outlets', keys: ['outlets'] },
+    { label: 'Material', keys: ['material'] },
+  ],
+  hardware: [
+    { label: 'Material', keys: ['material'] },
+  ],
 };
 
 /** Verified manual specs first, then structured catalog attributes, then values read from a description, then the bag label. */
@@ -237,9 +295,12 @@ export function summarize(category: Category, specs: Spec[]): SummaryItem[] {
       }
       return { label: row.label, value: 'unknown', known: false, sources: [] };
     }
-    const s = pickSpec(specs, row.keys[0]);
+    // A row may accept several keys (metric "Thread pitch" or imperial "Threads per inch"); the first one present wins.
+    let s: Spec | undefined;
+    for (const k of row.keys) if ((s = pickSpec(specs, k))) break;
     if (!s) return { label: row.label, value: 'unknown', known: false, sources: [] };
-    return { label: row.label, value: s.condition && !s.value.includes(s.condition) ? `${s.value} (${s.condition})` : s.value, known: true, sources: [sourceLabel(s)] };
+    const value = s.key === 'tpi' ? `${s.value} TPI` : s.value;
+    return { label: row.label, value: s.condition && !value.includes(s.condition) ? `${value} (${s.condition})` : value, known: true, sources: [sourceLabel(s)] };
   });
 }
 

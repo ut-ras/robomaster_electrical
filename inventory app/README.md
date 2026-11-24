@@ -17,7 +17,7 @@ test/         unit + end-to-end tests      scripts/  demo-e2e.ts, init-sheet.ts
 ```powershell
 copy .env.example .env      # fill in what you have; empty blocks run in demo mode
 npm start                   # or: node --env-file-if-exists=.env src/server/main.ts
-npm test                    # 33 tests, no network needed
+npm test                    # 51 tests, no network needed
 npm run demo:e2e            # first-delivery walkthrough, uses live services if configured
 ```
 
@@ -90,6 +90,18 @@ Phones only ever receive a signed team token. Every API call except `/api/status
 - Duplicate request ids return the first result.
 - Removals run one at a time and are refused if they would take a drawer below zero.
 - Scanning and saving never write ledger rows. After a save, the app *suggests* the printed quantity, and the member must type and confirm the actual count.
+
+**Mechanical hardware and McMaster-Carr** (`src/shared/hardware.ts`, `src/shared/mcmaster.ts`, `Inventory.saveHardware`)
+- **Add hardware** on the Scan screen: part name and category are required (screw, bolt, nut, washer, pin, manifold, other). Supplier, supplier part number, product link, specs and drawer are optional.
+- Each category offers its usual specs. Screws, bolts and nuts have a Metric / Imperial choice: metric sizes are `M3` with a pitch in mm, imperial sizes are `#4` or `1/4"` with threads per inch. A size from the other system is refused, so the two never mix.
+- Loose hardware with no part number gets a stable inventory ID such as `HW-3F9A0C12` (from the save's request id, so a retry is harmless). While a member types a name or part number, matching hardware already in inventory is offered with **Use this part**, so they add stock there instead of creating a duplicate.
+- **McMaster labels** go through the same upload, OCR and review flow. The parser reads the number after "Part Number", keeps the purchase order and line number out of it, and suggests a category and specs from the description. If the first OCR pass cannot read the part number, six more passes run at other sizes and contrast, and each part of the number is voted on. A number is filled in only when reads agree; otherwise it is offered as a one-tap guess. The label's ordered and shipped quantities are shown, and the member types the real count.
+- There is no McMaster catalog lookup yet; everything comes from the label or the member. Specs are saved as `manual`, with the label or member as the source, and are not marked verified.
+- Search understands `M3 x 8 mm`, `M3x8`, `M3-0.5 x 12mm`, `#4-40 x 1/2"`, `1/4-20 x 3/4`, and bare sizes like `8 mm` or `5/16"`. `M3 x 8 mm` does not match an M3 × 12 mm screw, and `M6` does not match a 1/4" screw.
+
+**Drawers are optional**
+- A blank or whitespace drawer means the part's single **Not specified** location. That text is what the `Locations` and `Stock Ledger` tabs show. Saving again without a drawer reuses it, and stock can be added and removed there like any drawer. Search "not specified" to list those parts.
+- The `Parts` tab has a new last column, `name`. Existing Sheets keep their data; a server start or `npm run sheets:init` writes the new header.
 
 ## Live APIs vs demo data in this delivery
 

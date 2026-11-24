@@ -8,6 +8,7 @@ import { stripTypeScriptTypes } from 'node:module';
 import type { BarcodeHit, CatalogPart, OcrLine, Supplier } from '../shared/types.ts';
 import { parseLabel } from '../shared/labels.ts';
 import { detectCategory, makeSpec, summarize } from '../shared/specs.ts';
+import { isCategory, UNASSIGNED_DRAWER, type ThreadSystem } from '../shared/hardware.ts';
 import { search } from '../shared/query.ts';
 import { identify, type CatalogProvider } from './catalog/index.ts';
 import { HttpError, Inventory } from './inventory.ts';
@@ -39,7 +40,8 @@ const str = (v: unknown, name: string, required = true): string => {
 const supplierOf = (v: unknown): Supplier => { if (v === 'mouser' || v === 'digikey') return v; throw new HttpError(400, 'supplier must be mouser or digikey'); };
 
 function withSummary(p: { category: string; description: string; specs: CatalogPart['specs'] }) {
-  const category = detectCategory(p.category, p.description);
+  // Saved parts already carry a category (hardware is chosen by the member); catalog records are detected.
+  const category = isCategory(p.category) ? p.category : detectCategory(p.category, p.description);
   return { category, summary: summarize(category, p.specs) };
 }
 
@@ -94,7 +96,9 @@ export function createApp(deps: AppDeps) {
         typeof x === 'string' ? [{ text: x }] : x && typeof x.text === 'string' ? [{ text: x.text, format: typeof x.format === 'string' ? x.format : undefined, x0: num(x.x0), y0: num(x.y0), x1: num(x.x1), y1: num(x.y1) }] : []);
       const lines: OcrLine[] = (Array.isArray(b.lines) ? b.lines : []).slice(0, 500).flatMap((l: any) =>
         l && typeof l.text === 'string' && [l.x0, l.y0, l.x1, l.y1].every((v) => num(v) !== undefined) ? [{ text: l.text, x0: l.x0, y0: l.y0, x1: l.x1, y1: l.y1 }] : []);
-      return send(res, 200, parseLabel(str(b.text, 'text', false), barcodes, b.supplier ? supplierOf(b.supplier) : undefined, lines));
+      const altTexts = (Array.isArray(b.altTexts) ? b.altTexts : []).slice(0, 8).filter((t: unknown): t is string => typeof t === 'string').map((t: string) => t.slice(0, 20000));
+      const override = b.supplier === 'mcmaster' ? 'mcmaster' : b.supplier ? supplierOf(b.supplier) : undefined;
+      return send(res, 200, parseLabel(str(b.text, 'text', false), barcodes, override, lines, altTexts));
     }
 
     if (path === '/api/identify' && req.method === 'POST') {
@@ -129,7 +133,7 @@ export function createApp(deps: AppDeps) {
       const labelSku = part.sku ? { supplier: part.supplier, sku: part.sku } : undefined;
       const cross = b.crossSku && typeof b.crossSku.sku === 'string' ? { supplier: supplierOf(b.crossSku.supplier), sku: b.crossSku.sku } : undefined;
       const r = await inventory.save({
-        requestId: str(b.requestId, 'requestId'), member, drawer: str(b.drawer, 'drawer'), part, labelSku, crossSku: cross,
+        requestId: str(b.requestId, 'requestId'), member, drawer: str(b.drawer, 'drawer', false), part, labelSku, crossSku: cross,
         manualSpecs: Array.isArray(b.manualSpecs) ? b.manualSpecs.map((m: any) => ({ name: str(m.name, 'spec name'), value: str(m.value, 'spec value'), sourceRef: str(m.sourceRef, 'datasheet page or source link') })) : [],
       });
       const saved = await inventory.getPart(r.partId);
@@ -144,10 +148,26 @@ export function createApp(deps: AppDeps) {
 
     if (path === '/api/drawers' && req.method === 'GET') {
       const locs = await inventory.store.read('locations');
-      return send(res, 200, [...new Set(locs.map((l) => l.drawer))].sort());
+      return send(res, 200, [...new Set(locs.map((l) => l.drawer))].filter((d) => d && d !== UNASSIGNED_DRAWER).sort());
     }
 
-    const m = /^\/api\/parts\/(P-[0-9a-f]+)(\/specs|\/refresh|\/history)?$/.exec(path);
+    if (path === '/api/hardware' && req.method === 'POST') {
+      const b = await body(req);
+      const supplier = b.supplier ? (b.supplier === 'mcmaster' ? 'mcmaster' : supplierOf(b.supplier)) : undefined;
+      const sys = b.threadSystem === 'metric' || b.threadSystem === 'imperial' ? (b.threadSystem as ThreadSystem) : undefined;
+      if (b.category !== undefined && typeof b.category !== 'string') throw new HttpError(400, 'category must be text');
+      const r = await inventory.saveHardware({
+        requestId: str(b.requestId, 'requestId'), member, name: str(b.name, 'Part name'), category: b.category,
+        supplier, sku: str(b.sku, 'sku', false), productUrl: str(b.productUrl, 'productUrl', false), description: str(b.description, 'description', false),
+        threadSystem: sys, drawer: str(b.drawer, 'drawer', false), partId: str(b.partId, 'partId', false) || undefined,
+        specSource: str(b.specSource, 'specSource', false),
+        specs: Array.isArray(b.specs) ? b.specs.slice(0, 40).map((s: any) => ({ name: str(s?.name, 'spec name', false), value: str(s?.value, 'spec value', false) })) : [],
+      });
+      const saved = await inventory.getPart(r.partId);
+      return send(res, 200, { ...r, part: saved && { ...saved, ...withSummary(saved) } });
+    }
+
+    const m = /^\/api\/parts\/(P-[0-9a-f]+|HW-[0-9A-F]+)(\/specs|\/refresh|\/history|\/locations)?$/.exec(path);
     if (m) {
       const id = m[1];
       if (!m[2] && req.method === 'GET') {
@@ -160,10 +180,15 @@ export function createApp(deps: AppDeps) {
         await inventory.editSpec(id, str(b.name, 'name'), str(b.value, 'value'), str(b.sourceRef, 'sourceRef'), member);
         return send(res, 200, { ok: true });
       }
+      if (m[2] === '/locations' && req.method === 'POST') {
+        const b = await body(req);
+        return send(res, 200, await inventory.addLocation(id, str(b.drawer, 'drawer', false), member, str(b.requestId, 'requestId')));
+      }
       if (m[2] === '/refresh' && req.method === 'POST') {
         const p = await inventory.getPart(id);
         if (!p) throw new HttpError(404, 'Unknown part');
         for (const s of p.skus) {
+          if (s.supplier !== 'mouser' && s.supplier !== 'digikey') continue; // no McMaster catalog lookup yet
           const found = (await providers[s.supplier].lookup(s.sku)).filter((c) => c.mpn.toUpperCase() === p.mpn.toUpperCase());
           if (found.length === 1) await inventory.refreshSpecs(id, found[0], member);
         }
@@ -176,7 +201,7 @@ export function createApp(deps: AppDeps) {
       const b = await body(req);
       const delta = Number(b.delta);
       const r = await inventory.adjustStock({
-        requestId: str(b.requestId, 'requestId'), partId: str(b.partId, 'partId'), drawer: str(b.drawer, 'drawer'),
+        requestId: str(b.requestId, 'requestId'), partId: str(b.partId, 'partId'), drawer: str(b.drawer, 'drawer', false),
         delta, member, reason: str(b.reason, 'reason', false) || (delta > 0 ? 'receive' : 'remove'), note: str(b.note, 'note', false),
       });
       return send(res, 200, r);

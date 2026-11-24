@@ -1,8 +1,13 @@
 // Shared domain types. Used by the server and (type-stripped) by the browser client.
 
-export type Supplier = 'mouser' | 'digikey';
+/** Suppliers with a live catalog lookup. */
+export type CatalogSupplier = 'mouser' | 'digikey';
+/** McMaster-Carr parts are entered from the label or by hand until API access is approved. */
+export type Supplier = CatalogSupplier | 'mcmaster';
 export type SpecSource = 'mouser' | 'digikey' | 'manual' | 'label';
-export type Category = 'capacitor' | 'resistor' | 'inductor' | 'ic' | 'connector' | 'other';
+/** Electronics categories are detected from catalog data; hardware categories are chosen by the member. */
+export type Category = 'capacitor' | 'resistor' | 'inductor' | 'ic' | 'connector' | 'other'
+  | 'screw' | 'bolt' | 'nut' | 'washer' | 'pin' | 'manifold' | 'hardware';
 
 /** Percent or absolute tolerance. Asymmetric values keep both sides. Absolute values are in SI base units. */
 export interface Tolerance {
@@ -80,6 +85,10 @@ export interface LabelFields {
   guesses?: { sku?: string; mpn?: string };
   /** Decoded barcodes we could not tie to a field; the member can assign them with one tap. */
   unassigned?: string[];
+  /** McMaster-Carr label extras. The purchase order and line number are shown, never used as the part number. */
+  mcmaster?: { purchaseOrder?: string; line?: string; ordered?: string; shipped?: string; reads?: number };
+  /** Hardware category and specs suggested from the label description; the member can change all of them. */
+  hardware?: { category: Category; specs: { name: string; value: string }[] };
 }
 
 export interface IdentifyResult {
@@ -102,6 +111,8 @@ export interface CandidateMatch {
 
 export interface InventoryPart {
   partId: string;
+  /** Member-given name (hardware). Electronics parts usually have none and are shown by MPN. */
+  name?: string;
   manufacturer: string;
   mpn: string;
   category: Category;
