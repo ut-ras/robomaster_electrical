@@ -71,6 +71,8 @@ export function createApp(deps: AppDeps) {
     if (path === '/api/status' && req.method === 'GET') {
       return send(res, 200, {
         mouser: providers.mouser.mode, digikey: providers.digikey.mode, store: inventory.store.mode, demoMembers: auth.demoMembers,
+        // Public on purpose: the spreadsheet's own Google sharing settings control who can view or edit it.
+        sheetUrl: inventory.store.viewUrl,
       });
     }
     if (path === '/api/login' && req.method === 'POST') {

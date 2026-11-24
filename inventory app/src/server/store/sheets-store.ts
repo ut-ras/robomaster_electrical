@@ -26,6 +26,10 @@ function colLetter(n: number): string {
   return s;
 }
 
+export function sheetViewUrl(spreadsheetId: string): string {
+  return `https://docs.google.com/spreadsheets/d/${encodeURIComponent(spreadsheetId.trim())}/edit`;
+}
+
 export class SheetsStore implements TableStore {
   readonly mode = 'sheets' as const;
   sa: ServiceAccount;
@@ -35,6 +39,11 @@ export class SheetsStore implements TableStore {
   constructor(sa: ServiceAccount, spreadsheetId: string) {
     this.sa = sa;
     this.spreadsheetId = spreadsheetId;
+  }
+
+  /** Browser link to the spreadsheet. The only Sheet detail sent to phones; Google decides who may open it. */
+  get viewUrl(): string {
+    return sheetViewUrl(this.spreadsheetId);
   }
 
   private async accessToken(): Promise<string> {

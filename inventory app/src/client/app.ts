@@ -53,13 +53,14 @@ async function renderLogin() {
   document.getElementById('signout')!.hidden = true;
   const status = await api('/api/status').catch(() => null);
   const name = h('input', { autocomplete: 'username', placeholder: 'Your name' }) as HTMLInputElement;
-  const pin = h('input', { type: 'password', inputmode: 'numeric', autocomplete: 'current-password', placeholder: 'Team PIN' }) as HTMLInputElement;
+  // Full keyboard (letters and digits), still masked. Sent as typed: "0042" stays "0042".
+  const pin = h('input', { type: 'password', inputmode: 'text', autocomplete: 'current-password', autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false', placeholder: 'Team PIN or passcode' }) as HTMLInputElement;
   const msg = h('div');
   show(h('div', { class: 'card' },
     h('h2', {}, 'Team sign-in'),
     h('p', { class: 'muted' }, 'Only team members can save parts or change stock.'),
     status?.demoMembers ? h('div', { class: 'notice warn' }, 'Demo server: sign in as "Demo One" / 1111 or "Demo Two" / 2222.') : null,
-    h('label', {}, 'Name'), name, h('label', {}, 'PIN'), pin, msg,
+    h('label', {}, 'Name'), name, h('label', {}, 'PIN or passcode'), pin, msg,
     h('button', { class: 'primary big', onclick: async () => {
       try {
         const r = await api<{ token: string; member: string }>('/api/login', { body: { name: name.value, pin: pin.value } });
@@ -495,4 +496,16 @@ function start() {
   renderScan();
 }
 
+/** Header link to the Google Sheet. Shown signed in or out, and only when the server uses a Google Sheet. */
+function showSheetLink() {
+  fetch('/api/status').then((r) => r.json()).then((s: { sheetUrl?: string }) => {
+    const a = document.getElementById('sheetlink') as HTMLAnchorElement;
+    if (typeof s.sheetUrl === 'string' && s.sheetUrl.startsWith('https://docs.google.com/spreadsheets/d/')) {
+      a.href = s.sheetUrl;
+      a.hidden = false;
+    }
+  }).catch(() => {});
+}
+
+showSheetLink();
 if (token) start(); else renderLogin();

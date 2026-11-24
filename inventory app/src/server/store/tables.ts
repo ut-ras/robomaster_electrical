@@ -15,6 +15,8 @@ export type Row = Record<string, string>;
 
 export interface TableStore {
   readonly mode: 'sheets' | 'file';
+  /** Link people can open to view the data directly (Google Sheets only). */
+  readonly viewUrl?: string;
   ensureTabs(): Promise<void>;
   /** All data rows (header excluded) as objects keyed by header name. Values are strings. */
   read(tab: TabId): Promise<Row[]>;
