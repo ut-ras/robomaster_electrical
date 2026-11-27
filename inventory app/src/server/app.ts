@@ -11,7 +11,7 @@ import { detectCategory, makeSpec, summarize } from '../shared/specs.ts';
 import { isCategory, UNASSIGNED_DRAWER, type ThreadSystem } from '../shared/hardware.ts';
 import { search } from '../shared/query.ts';
 import { identify, type CatalogProvider } from './catalog/index.ts';
-import { HttpError, Inventory } from './inventory.ts';
+import { HttpError, Inventory, partIdFor } from './inventory.ts';
 import { login, verify, type Auth } from './auth.ts';
 
 const ROOT = resolve(import.meta.dirname, '..', '..');
@@ -106,12 +106,19 @@ export function createApp(deps: AppDeps) {
       const input = { supplier: supplierOf(b.supplier), sku: str(b.sku, 'sku', false) || undefined, mpn: str(b.mpn, 'mpn', false) || undefined, manufacturer: str(b.manufacturer, 'manufacturer', false) || undefined };
       if (!input.sku && !input.mpn) throw new HttpError(400, 'Enter a supplier SKU or manufacturer part number');
       const result = await identify(input, providers);
-      const existing = input.sku ? await inventory.findBySku(input.sku) : undefined;
+      // Match the reviewed candidate's exact identity, including MPN-only and other-supplier scans.
+      // A SKU from an incorrect label must never route stock to a different component.
+      const stored = await inventory.loadAll();
+      const existingFor = (part: CatalogPart) => {
+        const p = stored.find((p) => p.partId === partIdFor(part.manufacturer, part.mpn));
+        return p ? { partId: p.partId, locations: p.locations } : undefined;
+      };
+      const present = (part: CatalogPart) => ({ ...part, ...withSummary(part), existing: existingFor(part) });
       return send(res, 200, {
         ...result,
-        chosen: result.chosen ? { ...result.chosen, ...withSummary(result.chosen) } : undefined,
-        candidates: result.candidates.map((c) => ({ ...c, part: { ...c.part, ...withSummary(c.part) } })),
-        existing: existing ? { partId: existing.partId, locations: existing.locations } : undefined,
+        chosen: result.chosen ? present(result.chosen) : undefined,
+        candidates: result.candidates.map((c) => ({ ...c, part: present(c.part) })),
+        existing: result.status === 'matched' && result.chosen ? existingFor(result.chosen) : undefined,
         catalogMode: { primary: providers[input.supplier].mode, other: providers[input.supplier === 'mouser' ? 'digikey' : 'mouser'].mode },
       });
     }

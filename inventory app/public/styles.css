@@ -48,6 +48,12 @@ button:disabled { opacity: .55; }
 .photo .frame { max-height: 34vh; overflow: auto; border-radius: 10px; border: 1px solid var(--line); background: #000; -webkit-overflow-scrolling: touch; }
 .photo img { display: block; width: 100%; }
 .photo.zoom img { width: 250%; max-width: none; }
+.barcode-preview { position: relative; margin: 10px auto; overflow: hidden; border-radius: 10px; background: #000; }
+.barcode-preview video { display: block; width: 100%; height: auto; }
+.barcode-guide { position: absolute; inset: 24% 5%; border: 2px solid #fff; border-radius: 8px; box-shadow: 0 0 0 200px #0006; pointer-events: none; }
+fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+legend { padding: 0; margin: 12px 0 6px; font-weight: 700; }
+fieldset:disabled { opacity: .75; }
 .summary { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; font-size: 14px; }
 .summary dt { color: var(--muted); }
 .summary dd { margin: 0; }

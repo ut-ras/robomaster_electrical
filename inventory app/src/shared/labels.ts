@@ -1,7 +1,7 @@
 // Turn OCR text and decoded barcodes from a Mouser or DigiKey bag label into structured fields.
 // Part numbers are kept verbatim: commas, suffixes and leading zeros are significant.
 
-import type { BarcodeHit, FieldValue, LabelFields, OcrLine, Supplier } from './types.ts';
+import type { BarcodeHit, CatalogSupplier, FieldValue, LabelFields, OcrLine, Supplier } from './types.ts';
 import { detectMcMaster, parseMcMasterTexts } from './mcmaster.ts';
 
 export function detectSupplier(text: string, barcodes: string[] = []): { value: Supplier; reason: string } | undefined {
@@ -160,6 +160,33 @@ function ocrKey(s: string): string {
 
 const MOUSER_SKU_RE = /^\d{2,3}-[A-Z0-9][A-Z0-9\-,./#+()]{2,}$/;
 const DK_SKU_RE = /^[0-9A-Z][0-9A-Z\-./#]{1,}-ND$/;
+
+/** Identify one deliberately targeted product barcode without using OCR or label position. */
+export function parseLiveProductBarcode(raw: string, selectedSupplier?: CatalogSupplier): LabelFields | undefined {
+  const text = raw.trim();
+  const payload = parseEcia(text);
+  const part = payload ? payload.p ?? '' : text;
+  const detected = DK_SKU_RE.test(part) ? 'digikey' : MOUSER_SKU_RE.test(part) ? 'mouser' : undefined;
+  if (selectedSupplier && detected && detected !== selectedSupplier) return undefined;
+  const supplier = selectedSupplier ?? detected;
+  if (!supplier) return undefined;
+
+  if (payload) {
+    const fields = parseLabel('', [text], supplier);
+    if (!fields.sku && !fields.mpn) return undefined;
+    return {
+      ...fields,
+      supplier: { value: supplier, reason: detected ? 'supplier SKU format' : 'chosen by user' },
+    };
+  }
+
+  if (!detected) return undefined;
+  return {
+    supplier: { value: supplier, reason: 'supplier SKU format' },
+    sku: { value: part, source: 'barcode', confidence: 1, verifiedBy: 'product barcode' },
+    partNumberStatus: 'ok',
+  };
+}
 
 /** Alphanumeric core used to compare a SKU with an MPN: "771-74LVC244APW-T" -> "74LVC244APWT". */
 function stem(s: string): string {

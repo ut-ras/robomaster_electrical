@@ -1,6 +1,6 @@
 # Robotics team parts inventory
 
-This is a mobile web app for iPhone and Android. Photograph a Mouser or DigiKey bag and check the part number it reads. It then looks up the exact part and its specs, and saves it to a drawer in one shared Google Sheet. Teammates can search by SKU, part number, specs or drawer from any phone.
+This is a mobile web app for iPhone and Android. Scan a Mouser or DigiKey bag, review the matched part, and confirm the actual count to receive it into inventory. Teammates can search by SKU, part number, specs or drawer from any phone.
 
 It is a single TypeScript project with **no npm dependencies**. Node ≥ 22.18 runs the `.ts` files directly. The server also strips types from the browser code as it serves it, so there is no build step.
 
@@ -14,14 +14,24 @@ test/         unit + end-to-end tests      scripts/  demo-e2e.ts, init-sheet.ts
 
 ## Run it
 
+For an isolated local demo that **ignores `.env` and all service credentials**, run from `inventory app`:
+
+```powershell
+npm run start:demo
+```
+
+Open [localhost:8787](http://localhost:8787) and sign in as **Demo One / 1111** or **Demo Two / 2222**. This mode uses bundled catalog fixtures and memory-only inventory, with no Google Sheet or inventory file access. Data resets when the server stops. Try **Enter part number**, select Mouser, and look up `771-74LVC244APW-T`; DigiKey examples are `495-75588-ND` and `WM20054-ND`. Receive one bag, then enter the same SKU again to try the existing-part **Add stock** flow. Leave the drawer blank to try **Not specified**, or use **Save part only** to leave stock unchanged.
+
+For configured storage and catalogs:
+
 ```powershell
 copy .env.example .env      # fill in what you have; empty blocks run in demo mode
 npm start                   # or: node --env-file-if-exists=.env src/server/main.ts
-npm test                    # 51 tests, no network needed
+npm test                    # isolated demo/unit tests, no live services
 npm run demo:e2e            # first-delivery walkthrough, uses live services if configured
 ```
 
-The server prints a `http://<laptop-ip>:8787` address. Phones on the same Wi-Fi open it. The camera opens through the photo picker, which works over plain HTTP on iOS and Android. For use away from that Wi-Fi, host it somewhere with HTTPS. Render, Fly.io, Railway or a Raspberry Pi with Caddy all work. Run **one** instance per Sheet, because writes are serialized inside that process.
+The configured server prints a `http://<laptop-ip>:8787` address. Phones on the same Wi-Fi can open it for photo upload and manual entry. **Live barcode scanning requires HTTPS on phones**, or `localhost` on the computer running the server. The isolated demo binds only to this computer. Run **one** instance per Sheet, because writes are serialized inside that process.
 
 With nothing configured, the app runs in demo mode:
 - Catalog data comes from the demo records in `src/server/catalog/fixtures.ts`.
@@ -29,6 +39,14 @@ With nothing configured, the app runs in demo mode:
 - Sign-ins are `Demo One`/1111 and `Demo Two`/2222.
 
 The header on every screen says whether Mouser, DigiKey and storage are live or demo.
+
+## Receiving a bag
+
+- **Scan barcode** is the main action; **Take photo**, **Upload photo**, **Enter part number**, and **Add hardware** remain available. A confident barcode or photo read starts catalog lookup automatically. Manual entry reaches the same review after lookup. Unclear matches require choosing the exact candidate or correcting the identifiers.
+- The review shows the matched part, counted quantity, optional drawer, and optional stock note. A printed quantity is only a suggestion: the count starts blank and stock is added only after a positive whole count is supplied and confirmed. A blank drawer means **Not specified**.
+- An exact existing manufacturer + MPN match shows its current drawers and counts and offers **Add stock**, without saving the part again. New parts offer **Save and add stock** and **Save part only**.
+- Confirmation stays visible until you move on. **Scan next** starts the next barcode scan; **Other entry options** opens the photo/manual/hardware choices.
+- If the part saves but stock cannot be confirmed, the review says so and keeps the count, drawer, and note visible. **Retry add stock** reuses the original stock request and payload, including when the first response was lost. Inputs lock after submission so a retry cannot silently change the intended operation. Each new bag gets a fresh operation.
 
 ## Credentials (all server-side)
 
@@ -44,6 +62,7 @@ Phones only ever receive a signed team token. Every API call except `/api/status
 ## How the requirements map to the code
 
 **Scanning** (`src/client/app.ts`, `src/client/barcodes.ts`, `src/shared/labels.ts`)
+- **Scan barcode** opens a live rear-camera preview for Mouser and DigiKey. Center a product barcode and verify the result on the review screen. Use the hosted HTTPS link on phones, or `localhost` when testing on the same computer as the server. Use **Take photo** or manual entry if the live camera or a product barcode is unavailable.
 - Members can take a photo, upload one, or type a part number.
 - OCR (tesseract.js) and a barcode reader (ZXing, compiled to JavaScript) run on the phone. Both load from pinned CDN URLs. This works the same on iPhone and Android; Android Chrome's built-in barcode reader is also used when present.
 - The barcode reader first finds barcode-shaped regions, then decodes each one at several small angles, because bags are rarely photographed square. Every barcode keeps its position in the photo.
@@ -89,7 +108,7 @@ Phones only ever receive a signed team token. Every API call except `/api/status
 - Stock lives in the `Stock Ledger` tab: one row per change, with member, time, drawer, signed quantity and request id.
 - Duplicate request ids return the first result.
 - Removals run one at a time and are refused if they would take a drawer below zero.
-- Scanning and saving never write ledger rows. After a save, the app *suggests* the printed quantity, and the member must type and confirm the actual count.
+- Scanning and catalog lookup never write ledger rows. **Save part only** leaves stock unchanged. **Save and add stock** saves first and then writes the explicitly confirmed count to the existing ledger. For existing parts, **Add stock** only writes the ledger operation.
 
 **Mechanical hardware and McMaster-Carr** (`src/shared/hardware.ts`, `src/shared/mcmaster.ts`, `Inventory.saveHardware`)
 - **Add hardware** on the Scan screen: part name and category are required (screw, bolt, nut, washer, pin, manifold, other). Supplier, supplier part number, product link, specs and drawer are optional.

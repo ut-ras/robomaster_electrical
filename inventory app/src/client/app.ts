@@ -1,7 +1,9 @@
 // Browser client. Served by the Node server with types stripped, so it must use only erasable TypeScript.
 
-import type { BarcodeHit, CatalogPart, Category, FieldValue, InventoryPart, LabelFields, OcrLine, Spec, Supplier } from '../shared/types.ts';
-import { readBarcodes } from './barcodes.ts';
+import type { BarcodeHit, CatalogPart, CatalogSupplier, Category, FieldValue, InventoryPart, LabelFields, OcrLine, Spec, Supplier } from '../shared/types.ts';
+import { createLiveBarcodeReader, readBarcodes } from './barcodes.ts';
+import { parseLiveProductBarcode } from '../shared/labels.ts';
+import { createReceipt } from './receiving.ts';
 import { HARDWARE_CATEGORIES, SPEC_TEMPLATES, THREADED, UNASSIGNED_DRAWER, categoryLabel, cleanHardwareSpecs, isHardwareCategory, isUnassigned, type SpecField, type ThreadSystem } from '../shared/hardware.ts';
 
 type Summary = { label: string; value: string; known: boolean; sources: string[] }[];
@@ -25,7 +27,11 @@ function h(tag: string, attrs: Attrs = {}, ...kids: (Node | string | null | unde
   return el;
 }
 const $view = () => document.getElementById('view')!;
-function show(...nodes: (Node | null | false)[]) { const v = $view(); v.replaceChildren(...(nodes.filter(Boolean) as Node[])); window.scrollTo(0, 0); }
+function show(...nodes: (Node | null | false)[]) {
+  stopLiveScan?.();
+  $view().replaceChildren(...(nodes.filter(Boolean) as Node[]));
+  window.scrollTo(0, 0);
+}
 const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
 
 // ---------- API ----------
@@ -47,7 +53,7 @@ async function api<T = any>(path: string, opts: { method?: string; body?: unknow
 }
 
 // ---------- sign in ----------
-function signOut() { token = ''; member = ''; safeSet('token', ''); safeSet('member', ''); renderLogin(); }
+function signOut() { stopLiveScan?.(); token = ''; member = ''; safeSet('token', ''); safeSet('member', ''); renderLogin(); }
 
 async function renderLogin() {
   document.getElementById('tabs')!.hidden = true;
@@ -88,6 +94,8 @@ interface ScanState {
 }
 
 let cameraInput: HTMLInputElement | undefined;
+let stopLiveScan: (() => void) | undefined;
+window.addEventListener('pagehide', () => stopLiveScan?.());
 
 function renderScan() {
   const camera = h('input', { type: 'file', accept: 'image/*', capture: 'environment', class: 'hidden', onchange: (e: Event) => onPhoto(e) }) as HTMLInputElement;
@@ -97,7 +105,8 @@ function renderScan() {
     h('h2', {}, 'Scan a package'),
     h('p', { class: 'muted' }, 'Photograph the Mouser, DigiKey or McMaster-Carr label flat and in focus. Nothing is saved and stock is not changed until you confirm.'),
     camera, upload,
-    h('button', { class: 'primary big', onclick: () => camera.click() }, 'Take photo'),
+    h('button', { class: 'primary big', onclick: renderLiveScan }, 'Scan barcode'),
+    h('button', { class: 'big', onclick: () => camera.click() }, 'Take photo'),
     h('button', { class: 'big', onclick: () => upload.click() }, 'Upload photo'),
     h('button', { class: 'big', onclick: () => renderReview({ ocrText: '', barcodes: [], fields: {}, requestId: uuid() }) }, 'Enter part number'),
   ), h('div', { class: 'card' },
@@ -105,6 +114,82 @@ function renderScan() {
     h('p', { class: 'muted' }, 'Screws, bolts, nuts, washers, pins, manifolds and other loose hardware. A supplier part number and drawer are optional.'),
     h('button', { class: 'big', onclick: () => renderHardware({ requestId: uuid() }) }, 'Add hardware'),
   ));
+}
+
+async function renderLiveScan() {
+  const supplier = h('select', { 'aria-label': 'Barcode supplier' },
+    h('option', { value: '' }, 'Detect automatically'),
+    h('option', { value: 'mouser' }, 'Mouser'), h('option', { value: 'digikey' }, 'DigiKey')) as HTMLSelectElement;
+  const video = h('video', { autoplay: true, playsinline: true, 'aria-label': 'Live rear-camera preview' }) as HTMLVideoElement;
+  video.muted = true;
+  const preview = h('div', { class: 'barcode-preview', hidden: true }, video,
+    h('div', { class: 'barcode-guide', 'aria-hidden': 'true' }));
+  const status = h('p', { class: 'muted', role: 'status' }, 'Starting camera…');
+  show(h('div', { class: 'card' }, h('h2', {}, 'Scan barcode'),
+    h('label', {}, 'Supplier'), supplier, preview, status,
+    h('button', { class: 'big', onclick: retake }, 'Take a photo instead'),
+    h('button', { class: 'big', onclick: renderScan }, 'Cancel')));
+
+  if (!navigator.mediaDevices?.getUserMedia) {
+    status.textContent = window.isSecureContext ? 'Live camera is unavailable on this device.' : 'Open the app over HTTPS to use the live camera.';
+    return;
+  }
+
+  let stream: MediaStream | undefined;
+  let timer: number | undefined;
+  let stopped = false;
+  const stop = () => {
+    stopped = true;
+    window.clearTimeout(timer);
+    stream?.getTracks().forEach((track) => track.stop());
+    video.srcObject = null;
+    if (stopLiveScan === stop) stopLiveScan = undefined;
+  };
+  const fail = (message: string) => {
+    stop();
+    preview.hidden = true;
+    status.textContent = message;
+  };
+  stopLiveScan = stop;
+
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: {
+      facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 },
+    } });
+    if (stopped) { stop(); return; }
+    video.srcObject = stream;
+    preview.hidden = false;
+    await video.play();
+    if (stopped) return;
+    preview.style.maxWidth = `${52 * video.videoWidth / video.videoHeight}vh`;
+    const readFrame = await createLiveBarcodeReader(video);
+    if (stopped) return;
+    status.textContent = 'Center one product barcode inside the guide.';
+
+    const scan = () => {
+      if (stopped) return;
+      try {
+        const text = readFrame();
+        if (text) {
+          const fields = parseLiveProductBarcode(text, (supplier.value || undefined) as CatalogSupplier | undefined);
+          if (fields) {
+            stop();
+            renderReview({ ocrText: '', barcodes: [{ text }], fields, requestId: uuid() });
+            return;
+          }
+          status.textContent = 'Try the barcode next to the part number, or choose the supplier above.';
+        }
+        timer = window.setTimeout(scan, 200);
+      } catch {
+        fail('Couldn’t read the live camera. Try taking a photo.');
+      }
+    };
+    scan();
+  } catch (error) {
+    if (!stopped) fail(error instanceof DOMException && error.name === 'NotAllowedError'
+      ? 'Camera access was denied. Allow it in your browser or take a photo.'
+      : 'Couldn’t start the live scanner. Try taking a photo.');
+  }
 }
 
 /** Opens the camera again (used by "Retake close-up"); stays in the scan flow. */
@@ -246,7 +331,7 @@ function sourceNote(f: FieldValue | undefined) {
 function fieldInput(label: string, f: FieldValue | undefined, opts: { pn?: boolean; numeric?: boolean; guess?: string } = {}) {
   const input = h('input', { 'aria-label': label, value: f?.value ?? '', class: opts.pn ? 'pn' : undefined, inputmode: opts.numeric ? 'numeric' : undefined, autocapitalize: opts.pn ? 'characters' : undefined, autocorrect: 'off', spellcheck: 'false' }) as HTMLInputElement;
   const hint = opts.guess ? h('div', { class: 'src' }, 'Text read as ', h('span', { class: 'mono' }, `"${opts.guess}"`), ' – not trusted. ',
-    h('button', { class: 'link', onclick: () => { input.value = opts.guess!; input.focus(); } }, 'Use it anyway')) : null;
+    h('button', { class: 'link', onclick: () => { input.value = opts.guess!; input.dispatchEvent(new Event('input', { bubbles: true })); input.focus(); } }, 'Use it anyway')) : null;
   return { node: h('div', {}, h('label', {}, label, sourceNote(f)), input, hint), input };
 }
 
@@ -267,17 +352,42 @@ async function renderReview(st: ScanState) {
   const desc = fieldInput('Description', f.description);
   const qty = fieldInput('Printed quantity', f.quantity, { numeric: true });
   const out = h('div');
+  const confident = f.partNumberStatus === 'ok' && !!f.supplier && !!(f.sku || f.mpn);
+  const editor = h('fieldset', {}, supplier, sku.node, mpn.node, mfr.node, desc.node, qty.node) as HTMLFieldSetElement;
+  let lookupVersion = 0;
+  const corrections = h('details', { open: !confident }, h('summary', {}, 'Part number and label details'), editor) as HTMLDetailsElement;
+  const title = h('h2', {}, confident ? 'Review and receive' : st.photoUrl ? 'Check what was read' : 'Enter part number');
+  const lockReview = () => { editor.disabled = true; lookupBtn.disabled = true; };
 
   const lookup = async () => {
     if (!supplier.value) { out.replaceChildren(h('div', { class: 'notice warn' }, 'Choose the supplier first.')); return; }
     if (!sku.input.value.trim() && !mpn.input.value.trim()) { out.replaceChildren(h('div', { class: 'notice warn' }, 'Enter the SKU or manufacturer part number first.')); return; }
-    out.replaceChildren(h('p', { class: 'muted' }, 'Looking up catalog…'));
+    const version = ++lookupVersion;
+    lookupBtn.disabled = true;
+    const label = { supplier: supplier.value as Supplier, sku: sku.input.value.trim(), mpn: mpn.input.value.trim(), manufacturer: mfr.input.value.trim(), description: desc.input.value.trim(), printedQty: qty.input.value.trim() };
+    out.replaceChildren(h('p', { class: 'muted', role: 'status' }, 'Looking up catalog…'));
     try {
-      const r = await api('/api/identify', { body: { supplier: supplier.value, sku: sku.input.value.trim(), mpn: mpn.input.value.trim(), manufacturer: mfr.input.value.trim() } });
-      out.replaceChildren(renderIdentify(r, st, { supplier: supplier.value as Supplier, sku: sku.input.value.trim(), mpn: mpn.input.value.trim(), manufacturer: mfr.input.value.trim(), description: desc.input.value.trim(), printedQty: qty.input.value.trim() }));
-      out.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    } catch (e) { out.replaceChildren(h('div', { class: 'notice bad' }, (e as Error).message)); }
+      const r = await api('/api/identify', { body: label });
+      if (version !== lookupVersion || !out.isConnected) return;
+      out.replaceChildren(renderIdentify(r, st, label, lockReview));
+      corrections.open = r.status !== 'matched';
+      title.textContent = r.status === 'matched' ? 'Review and receive' : 'Choose or correct the part';
+    } catch (e) {
+      if (version === lookupVersion && out.isConnected) {
+        corrections.open = true;
+        out.replaceChildren(h('div', { class: 'notice bad', role: 'alert' }, (e as Error).message));
+      }
+    } finally { if (version === lookupVersion) lookupBtn.disabled = false; }
   };
+  const lookupBtn = h('button', { class: 'primary big', onclick: lookup }, 'Look up in catalog') as HTMLButtonElement;
+  editor.prepend(h('label', {}, 'Supplier', f.supplier ? h('span', { class: 'src' }, ` (${f.supplier.reason})`) : null));
+  editor.append(lookupBtn);
+  const invalidate = () => {
+    lookupVersion++;
+    lookupBtn.disabled = false;
+    out.replaceChildren(h('p', { class: 'notice warn' }, 'Part details changed. Look up the corrected part before receiving.'));
+  };
+  for (const input of [supplier, sku.input, mpn.input, mfr.input, desc.input, qty.input]) input.addEventListener('input', invalidate);
 
   // Photo scans where neither identifier could be trusted get a clear stop instead of junk in the fields.
   const unreadable = st.photoUrl && f.partNumberStatus === 'unreadable'
@@ -294,25 +404,25 @@ async function renderReview(st: ScanState) {
   const unassigned = (f.unassigned ?? []).length
     ? h('div', {}, h('label', {}, 'Other barcodes on the label (tap to use)'),
         ...(f.unassigned ?? []).map((t) => h('div', { class: 'row', style: 'margin:4px 0' }, h('span', { class: 'mono' }, t),
-          h('button', { onclick: () => { sku.input.value = t; } }, 'SKU'), h('button', { onclick: () => { mpn.input.value = t; } }, 'MPN'),
-          /^\d+$/.test(t) ? h('button', { onclick: () => { qty.input.value = t; } }, 'Qty') : null)))
+          h('button', { onclick: () => { sku.input.value = t; invalidate(); } }, 'SKU'), h('button', { onclick: () => { mpn.input.value = t; invalidate(); } }, 'MPN'),
+          /^\d+$/.test(t) ? h('button', { onclick: () => { qty.input.value = t; invalidate(); } }, 'Qty') : null)))
     : null;
+  if (unassigned) editor.append(unassigned);
 
   show(
     photoBlock(st.photoUrl),
     h('div', { class: 'card' },
-      h('h2', {}, st.photoUrl ? 'Check what was read' : 'Enter part number'),
+      title,
       unreadable,
-      h('label', {}, 'Supplier', f.supplier ? h('span', { class: 'src' }, ` (${f.supplier.reason})`) : null), supplier,
-      sku.node, mpn.node, mfr.node, desc.node, qty.node, unassigned,
+      corrections,
       st.photoUrl ? h('details', {}, h('summary', {}, 'Raw OCR text and barcodes'),
         h('pre', { class: 'mono muted', style: 'white-space:pre-wrap' }, st.ocrText || '(no text)'),
         h('p', { class: 'muted' }, st.barcodes.length ? `Barcodes decoded: ${st.barcodes.map((b) => b.text).join(' | ')}` : 'No barcodes decoded.')) : null,
-      h('button', { class: 'primary big', onclick: lookup }, 'Look up in catalog'),
+      out,
       h('button', { class: 'big', onclick: renderScan }, 'Start over'),
     ),
-    out,
   );
+  if (confident) await lookup();
 }
 
 interface LabelInfo { supplier: Supplier; sku: string; mpn: string; manufacturer: string; description: string; printedQty: string }
@@ -335,33 +445,36 @@ function links(p: { productUrl?: string; datasheetUrl?: string }) {
     p.datasheetUrl ? h('a', { href: p.datasheetUrl, target: '_blank', rel: 'noopener' }, 'Datasheet') : h('span', { class: 'unknown' }, 'No datasheet link'));
 }
 
-function renderIdentify(r: any, st: ScanState, label: LabelInfo): HTMLElement {
+type ReviewPart = WithSummary<CatalogPart> & { existing?: Pick<InventoryPart, 'partId' | 'locations'> };
+
+function renderIdentify(r: any, st: ScanState, label: LabelInfo, lockReview: () => void): HTMLElement {
   const box = h('div');
   const statusBadge = r.status === 'matched' ? h('span', { class: 'badge ok' }, 'Exact match') : r.status === 'review' ? h('span', { class: 'badge warn' }, 'Needs review') : h('span', { class: 'badge bad' }, 'Not found');
   const head = h('div', { class: 'card' }, h('h2', {}, 'Catalog result ', statusBadge),
     h('p', { class: 'muted' }, `Catalog data: ${r.catalogMode.primary === 'live' ? 'live API' : 'DEMO data'} (${label.supplier})`),
-    ...r.reasons.map((x: string) => h('div', { class: 'notice warn' }, x)),
-    r.existing ? h('div', { class: 'notice ok' }, 'Already in inventory: ', ...r.existing.locations.map((l: any) => h('span', { class: 'badge drawer' }, l.drawer))) : null);
+    ...r.reasons.map((x: string) => h('div', { class: 'notice warn' }, x)));
   box.append(head);
 
   if (r.status === 'not_found') {
-    box.append(manualPartForm(st, label));
+    box.append(manualPartForm(st, label, lockReview));
     return box;
   }
   const detail = h('div');
-  const pick = (part: WithSummary<CatalogPart>) => detail.replaceChildren(partReview(part, r.crossSku, r.gapFill, st, label));
+  const choices = h('fieldset') as HTMLFieldSetElement;
+  const lock = () => { choices.disabled = true; lockReview(); };
+  const pick = (part: ReviewPart) => detail.replaceChildren(partReview(part, r.crossSku, r.gapFill, st, label, lock));
   if (r.status === 'review' && r.candidates.length) {
-    head.append(h('h3', {}, 'Choose the exact part'), ...r.candidates.map((c: any, i: number) => {
+    choices.append(h('legend', {}, 'Choose the exact part'), ...r.candidates.map((c: any) => {
       const radio = h('input', { type: 'radio', name: 'cand', onchange: () => pick(c.part) }) as HTMLInputElement;
-      if (r.chosen && c.part.sku === r.chosen.sku && c.part.mpn === r.chosen.mpn) radio.checked = true;
       return h('label', { class: 'cand' }, radio, h('div', {},
         h('div', { class: 'mono' }, c.part.mpn), h('div', { class: 'muted' }, `${c.part.manufacturer} · ${c.part.sku}`),
         h('div', {}, c.mpnMatch === false ? h('span', { class: 'badge bad' }, 'MPN differs') : c.mpnMatch ? h('span', { class: 'badge ok' }, 'MPN matches') : null,
           c.manufacturerMatch === false ? h('span', { class: 'badge bad' }, 'Manufacturer differs') : c.manufacturerMatch ? h('span', { class: 'badge ok' }, 'Manufacturer matches') : null),
         h('div', { class: 'muted' }, c.part.description)));
-    }), h('button', { class: 'link', onclick: () => detail.replaceChildren(manualPartForm(st, label)) }, 'None of these – enter manually'));
+    }), h('button', { class: 'link', onclick: () => detail.replaceChildren(manualPartForm(st, label, lock)) }, 'None of these – enter manually'));
+    head.append(choices);
   }
-  if (r.chosen) pick(r.chosen);
+  if (r.status === 'matched' && r.chosen) pick(r.chosen);
   box.append(detail);
   return box;
 }
@@ -394,56 +507,84 @@ function drawerPicker() {
 const drawerName = (d: string) => (isUnassigned(d) ? UNASSIGNED_DRAWER : d.trim().replace(/\s+/g, ' '));
 const savedWhere = (d: string) => (isUnassigned(d) ? 'with drawer Not specified' : `in drawer ${drawerName(d)}`);
 
-function partReview(part: WithSummary<CatalogPart>, crossSku: any, gapFill: any, st: ScanState, label: LabelInfo) {
-  const drawer = drawerPicker();
+function partReview(part: ReviewPart, crossSku: any, gapFill: any, st: ScanState, label: LabelInfo, lockReview: () => void) {
   const manual = manualSpecsEditor();
-  const msg = h('div');
-  const saveBtn = h('button', { class: 'primary big' }, 'Save to inventory') as HTMLButtonElement;
-  saveBtn.onclick = async () => {
-    saveBtn.disabled = true;
-    msg.replaceChildren(h('p', { class: 'muted' }, 'Saving…'));
-    try {
-      const r = await api('/api/parts', { body: { requestId: st.requestId, drawer: drawer.input.value, part: { ...part, sku: label.sku || part.sku }, crossSku, manualSpecs: manual.read() } });
-      msg.replaceChildren(h('div', { class: 'notice ok' }, `${r.created ? 'Saved new part' : 'Updated existing part'} ${savedWhere(drawer.input.value)}.`), receiveStock(r.partId, drawer.input.value, label.printedQty));
-      saveBtn.textContent = 'Saved';
-    } catch (e) {
-      saveBtn.disabled = false; // same requestId on retry, so a double save is harmless
-      msg.replaceChildren(h('div', { class: 'notice bad' }, (e as Error).message));
-    }
-  };
+  const sku = label.sku && [part.sku, ...part.altSkus].some((s) => s.toUpperCase() === label.sku.toUpperCase()) ? label.sku : part.sku;
   return h('div', { class: 'card' },
     h('h2', { class: 'mono' }, part.mpn),
     h('div', {}, part.manufacturer, ' · ', h('span', { class: 'badge' }, part.category), part.origin === 'demo' ? h('span', { class: 'badge warn' }, 'demo data') : h('span', { class: 'badge ok' }, 'live')),
     h('p', { class: 'muted' }, part.description),
     h('p', { class: 'muted' }, `${part.supplier}: `, h('span', { class: 'mono' }, part.sku), crossSku ? ` · also ${crossSku.supplier}: ` : '', crossSku ? h('span', { class: 'mono' }, crossSku.sku) : ''),
     gapFill ? h('p', { class: 'muted' }, gapFill.addedKeys?.length ? `Filled ${gapFill.addedKeys.length} specs from ${gapFill.supplier} (exact manufacturer + MPN match).` : `${gapFill.supplier} not used: ${gapFill.rejected ?? 'nothing to add'}.`) : null,
-    summaryList(part.summary), specTable(part.specs), links(part),
-    manual.node, drawer.node, saveBtn, msg);
+    part.existing ? h('div', { class: 'notice ok' }, h('strong', {}, 'Already in inventory'),
+      ...part.existing.locations.map((l) => h('div', {}, `${drawerName(l.drawer)}: ${l.qty === null ? 'not counted' : l.qty}`))) : null,
+    receivingForm(() => ({ ...part, sku }), st, label, lockReview, part.existing?.partId, part.existing ? undefined : manual, crossSku),
+    h('details', {}, h('summary', {}, 'Part specs and links'), summaryList(part.summary), specTable(part.specs), links(part)));
 }
 
-function manualPartForm(st: ScanState, label: LabelInfo) {
+/** Count, location, and action stay together. Failed writes keep their original intent for a safe retry. */
+function receivingForm(part: () => CatalogPart, st: ScanState, label: LabelInfo, lockReview: () => void,
+  existingId?: string, manual?: ReturnType<typeof manualSpecsEditor>, crossSku?: { supplier: string; sku: string }) {
+  const drawer = drawerPicker();
+  const count = h('input', { 'aria-label': 'Counted quantity', inputmode: 'numeric', placeholder: 'Count the pieces you are adding' }) as HTMLInputElement;
+  const note = h('input', { 'aria-label': 'Stock note (optional)', placeholder: 'e.g. opened bag, checked by Alex' }) as HTMLInputElement;
+  const msg = h('div', { 'aria-live': 'polite' });
+  const receipt = createReceipt((path, body) => api(path, { body }), st.requestId, uuid(), existingId);
+  const controls = h('fieldset', {},
+    h('legend', {}, 'Receive this bag'),
+    h('label', {}, 'Counted quantity'), count,
+    h('p', { class: 'muted' }, label.printedQty ? `Printed quantity: ${label.printedQty} (suggestion only). Count what is actually in this bag, then confirm below.` : 'Count what is actually in this bag, then confirm below.'),
+    label.printedQty ? h('button', { onclick: () => { count.value = label.printedQty; count.focus(); } }, `Use ${label.printedQty}`) : null,
+    drawer.node, h('label', {}, 'Stock note (optional)'), note,
+    manual ? h('details', {}, h('summary', {}, 'Add or correct specs'), manual.node) : null) as HTMLFieldSetElement;
+  let busy = false;
+  let mode: boolean | undefined;
+  const addBtn = h('button', { class: 'primary big', onclick: () => submit(mode ?? true) }, existingId ? 'Add stock' : 'Save and add stock') as HTMLButtonElement;
+  const onlyBtn = h('button', { class: 'big', onclick: () => submit(false) }, 'Save part only') as HTMLButtonElement;
+  const submit = async (addStock: boolean) => {
+    if (busy) return;
+    busy = true; addBtn.disabled = true; onlyBtn.disabled = true;
+    try {
+      const result = receipt.submit({ part: part(), count: count.value, drawer: drawer.input.value, note: note.value, manualSpecs: manual?.read(), crossSku }, addStock);
+      mode = addStock;
+      controls.disabled = true;
+      lockReview();
+      msg.replaceChildren(h('p', { role: 'status' }, addStock ? 'Saving and adding stock…' : 'Saving part…'));
+      const r = await result;
+      msg.replaceChildren(h('div', { class: 'notice ok', role: 'status' },
+        r.count === undefined ? `Saved part ${savedWhere(r.drawer)}. No stock added.` : `Added ${r.count} to drawer ${r.drawer}. Current count: ${r.balance}.${r.duplicate ? ' This operation was already recorded; no extra stock was added.' : ''}`),
+        h('button', { class: 'primary big', onclick: renderLiveScan }, 'Scan next'),
+        h('button', { class: 'big', onclick: renderScan }, 'Other entry options'),
+        h('button', { class: 'link', onclick: () => renderPart(r.partId) }, 'View inventory part'));
+      addBtn.textContent = 'Done';
+      msg.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    } catch (e) {
+      const message = !receipt.started ? '' : mode
+        ? `${receipt.partId ? 'Part is saved. Stock addition could not be confirmed.' : 'Part save could not be confirmed.'} Retry the same operation below; the count, drawer and note are retained.`
+        : 'Part save could not be confirmed. Retry the same save below.';
+      msg.replaceChildren(h('div', { class: 'notice bad', role: 'alert' }, message, h('div', {}, (e as Error).message)));
+      addBtn.disabled = false;
+      onlyBtn.disabled = receipt.started;
+      if (receipt.started) addBtn.textContent = mode ? (receipt.partId ? 'Retry add stock' : 'Retry save and add stock') : 'Retry save part only';
+    } finally { busy = false; }
+  };
+  return h('div', {}, controls, addBtn, existingId ? null : onlyBtn, msg);
+}
+
+function manualPartForm(st: ScanState, label: LabelInfo, lockReview: () => void) {
   const mfr = h('input', { value: label.manufacturer }) as HTMLInputElement;
   const mpn = h('input', { value: label.mpn, class: 'pn' }) as HTMLInputElement;
   const desc = h('input', { value: label.description }) as HTMLInputElement;
   const cat = h('select', {}, ...['capacitor', 'resistor', 'inductor', 'ic', 'connector', 'other'].map((c) => h('option', { value: c }, c))) as HTMLSelectElement;
   const ds = h('input', { placeholder: 'https://…' }) as HTMLInputElement;
-  const drawer = drawerPicker();
   const manual = manualSpecsEditor();
-  const msg = h('div');
-  return h('div', { class: 'card' },
-    h('h2', {}, 'Enter part manually'),
+  const fields = h('fieldset', {}, h('legend', {}, 'Enter part manually'),
     h('label', {}, 'Manufacturer'), mfr, h('label', {}, 'Manufacturer part number'), mpn, h('label', {}, 'Description'), desc,
-    h('label', {}, 'Category'), cat, h('label', {}, 'Datasheet link'), ds,
-    manual.node, drawer.node,
-    h('button', { class: 'primary big', onclick: async () => {
-      try {
-        const specs = manual.read();
-        if (specs.some((s) => !s.sourceRef)) throw new Error('Every manual spec needs a datasheet page or source link');
-        const r = await api('/api/parts', { body: { requestId: st.requestId, drawer: drawer.input.value, manualSpecs: specs,
-          part: { supplier: label.supplier, sku: label.sku, manufacturer: mfr.value, mpn: mpn.value, description: desc.value, category: cat.value, datasheetUrl: ds.value, specs: [], origin: 'demo' } } });
-        msg.replaceChildren(h('div', { class: 'notice ok' }, 'Saved.'), receiveStock(r.partId, drawer.input.value, label.printedQty));
-      } catch (e) { msg.replaceChildren(h('div', { class: 'notice bad' }, (e as Error).message)); }
-    } }, 'Save to inventory'), msg);
+    h('label', {}, 'Category'), cat, h('label', {}, 'Datasheet link'), ds) as HTMLFieldSetElement;
+  return h('div', { class: 'card' },
+    fields,
+    receivingForm(() => ({ supplier: label.supplier, sku: label.sku, manufacturer: mfr.value, mpn: mpn.value, description: desc.value, category: cat.value, datasheetUrl: ds.value, specs: [], altSkus: [], origin: 'demo' }),
+      st, label, () => { fields.disabled = true; lockReview(); }, undefined, manual));
 }
 
 /**

@@ -13,10 +13,45 @@ function loadZxing(): Promise<any> {
   zxingLoad ??= new Promise((ok, fail) => {
     if ((window as any).ZXing) return ok((window as any).ZXing);
     const s = document.createElement('script');
-    s.src = ZXING_URL; s.onload = () => ok((window as any).ZXing); s.onerror = () => fail(new Error('could not load barcode reader'));
+    s.src = ZXING_URL; s.onload = () => ok((window as any).ZXing);
+    s.onerror = () => { zxingLoad = undefined; s.remove(); fail(new Error('could not load barcode reader')); };
     document.head.append(s);
   });
   return zxingLoad;
+}
+
+/** Read the guide area of each camera frame with the same decoder used for photos. */
+export async function createLiveBarcodeReader(video: HTMLVideoElement): Promise<() => string | undefined> {
+  const Z = await loadZxing();
+  const reader = new Z.MultiFormatReader();
+  reader.setHints(new Map([[Z.DecodeHintType.POSSIBLE_FORMATS, [
+    Z.BarcodeFormat.CODE_128, Z.BarcodeFormat.CODE_39, Z.BarcodeFormat.DATA_MATRIX, Z.BarcodeFormat.QR_CODE,
+  ]]]));
+  const canvas = document.createElement('canvas');
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  if (!context) throw new Error('Could not start the barcode reader');
+
+  return () => {
+    if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return undefined;
+    const { videoWidth, videoHeight } = video;
+    if (!videoWidth || !videoHeight) return undefined;
+    // Keep this crop aligned with the on-screen guide in styles.css.
+    const width = Math.round(videoWidth * 0.9);
+    const height = Math.round(videoHeight * 0.52);
+    const scale = Math.min(1, 1100 / Math.max(width, height));
+    const targetWidth = Math.round(width * scale), targetHeight = Math.round(height * scale);
+    if (canvas.width !== targetWidth) canvas.width = targetWidth;
+    if (canvas.height !== targetHeight) canvas.height = targetHeight;
+    context.drawImage(video, (videoWidth - width) / 2, (videoHeight - height) / 2, width, height,
+      0, 0, targetWidth, targetHeight);
+    const source = new Z.HTMLCanvasElementLuminanceSource(canvas);
+    try {
+      return reader.decodeWithState(new Z.BinaryBitmap(new Z.HybridBinarizer(source))).getText();
+    } catch (error) {
+      if (!(error instanceof Z.NotFoundException)) throw error;
+      return undefined;
+    }
+  };
 }
 
 interface Box { x0: number; y0: number; x1: number; y1: number; kind: '1d' | '2d' }
