@@ -148,6 +148,16 @@ export class Inventory {
     return (await this.loadAll()).find((p) => p.skus.some((s) => s.sku.toUpperCase() === u));
   }
 
+  /** Shares the writer lock with saves and stock changes. Repeating a completed delete is harmless. */
+  deletePart(partId: string) {
+    return this.locked(async () => {
+      if (!/^(P-[0-9a-f]+|HW-[0-9A-F]+)$/.test(partId)) throw new HttpError(400, 'Invalid inventory ID');
+      const part = (await this.store.read('parts')).find((p) => p.part_id === partId);
+      await this.store.deleteByPartId(partId);
+      return { partId, name: part?.name || part?.mpn || partId };
+    });
+  }
+
   save(req: SaveRequest) {
     return this.locked(async () => {
       const { part, member } = req;

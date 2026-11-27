@@ -47,4 +47,16 @@ export class FileStore implements TableStore {
     t[index + 1] = toCells(tab, row);
     this.flush();
   }
+
+  async deleteByPartId(partId: string) {
+    if (!partId) throw new Error('partId required');
+    const previous = this.data;
+    const next = { ...previous };
+    for (const tab of Object.values(TABS)) {
+      const column = tab.header.indexOf('part_id');
+      if (previous[tab.name]) next[tab.name] = previous[tab.name].filter((cells, i) => i === 0 || cells[column] !== partId);
+    }
+    this.data = next;
+    try { this.flush(); } catch (error) { this.data = previous; throw error; }
+  }
 }

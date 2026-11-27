@@ -119,4 +119,25 @@ export class SheetsStore implements TableStore {
       method: 'PUT', body: JSON.stringify({ values: [toCells(tab, row)] }),
     });
   }
+
+  async deleteByPartId(partId: string) {
+    if (!partId) throw new Error('partId required');
+    const meta = await this.api('?fields=sheets.properties');
+    const sheetIds = new Map<string, number>((meta.sheets ?? []).map((s: any) => [s.properties.title, s.properties.sheetId]));
+    // Gather every match before writing. One batch prevents a partially deleted part across tabs.
+    const tabs = await Promise.all((Object.keys(TABS) as TabId[]).map(async (tab) => ({ tab, rows: await this.read(tab) })));
+    const requests: unknown[] = [];
+    for (const { tab, rows } of tabs) {
+      const sheetId = sheetIds.get(TABS[tab].name);
+      if (sheetId === undefined) throw new Error(`Missing sheet: ${TABS[tab].name}`);
+      // Delete bottom-up so earlier row indexes remain valid. Group only adjacent exact matches.
+      for (let i = rows.length - 1; i >= 0; i--) {
+        if (rows[i].part_id !== partId) continue;
+        const endIndex = i + 2; // data row 0 is sheet row 2; dimension indexes are zero-based
+        while (i > 0 && rows[i - 1].part_id === partId) i--;
+        requests.push({ deleteDimension: { range: { sheetId, dimension: 'ROWS', startIndex: i + 1, endIndex } } });
+      }
+    }
+    if (requests.length) await this.api(':batchUpdate', { method: 'POST', body: JSON.stringify({ requests }) });
+  }
 }

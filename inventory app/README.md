@@ -110,6 +110,11 @@ Phones only ever receive a signed team token. Every API call except `/api/status
 - Removals run one at a time and are refused if they would take a drawer below zero.
 - Scanning and catalog lookup never write ledger rows. **Save part only** leaves stock unchanged. **Save and add stock** saves first and then writes the explicitly confirmed count to the existing ledger. For existing parts, **Add stock** only writes the ledger operation.
 
+**Deleting a part**
+- The inventory detail page keeps **− Take** for normal stock adjustments. **Delete part** asks for confirmation with the displayed part name and Inventory ID, and warns that deletion permanently removes all associated records and stock history.
+- Deletion requires team sign-in and removes only rows with that exact `part_id` from **Parts**, **Supplier SKUs**, **Specs**, **Locations**, and **Stock Ledger**, under the same writer lock as saves and stock changes. The Sheets backend deletes matching row ranges in one batch; the demo file backend persists the filtered data in one write.
+- After deletion the app returns to Search and identifies the deleted part. Cancel leaves everything untouched. Automated checks use isolated demo data and a stubbed Sheets transport, never the shared Sheet.
+
 **Mechanical hardware and McMaster-Carr** (`src/shared/hardware.ts`, `src/shared/mcmaster.ts`, `Inventory.saveHardware`)
 - **Add hardware** on the Scan screen: part name and category are required (screw, bolt, nut, washer, pin, manifold, other). Supplier, supplier part number, product link, specs and drawer are optional.
 - Each category offers its usual specs. Screws, bolts and nuts have a Metric / Imperial choice: metric sizes are `M3` with a pitch in mm, imperial sizes are `#4` or `1/4"` with threads per inch. A size from the other system is refused, so the two never mix.

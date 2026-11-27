@@ -177,6 +177,7 @@ export function createApp(deps: AppDeps) {
     const m = /^\/api\/parts\/(P-[0-9a-f]+|HW-[0-9A-F]+)(\/specs|\/refresh|\/history|\/locations)?$/.exec(path);
     if (m) {
       const id = m[1];
+      if (!m[2] && req.method === 'DELETE') return send(res, 200, await inventory.deletePart(id));
       if (!m[2] && req.method === 'GET') {
         const p = await inventory.getPart(id);
         if (!p) throw new HttpError(404, 'Unknown part');

@@ -42,18 +42,19 @@ class Element {
   focus() {} scrollIntoView() {}
 }
 
-export async function client(demo: { base: string; token: string }, intercept?: (path: string, body: any) => Promise<Response | undefined>) {
+export async function client(demo: { base: string; token: string }, intercept?: (path: string, body: any) => Promise<Response | undefined>, confirm: (message: string) => boolean = () => false) {
   const roots = Object.fromEntries(['view', 'tabs', 'signout', 'modes', 'sheetlink'].map(id => { const el = new Element('div'); el.attrs.id = id; return [id, el]; }));
-  const requests: { path: string; body: any }[] = [];
+  const requests: { path: string; body: any; method: string }[] = [];
+  const confirmations: string[] = [];
   const pending = new Set<Promise<Response>>();
   const context: any = { console, ...hardware, createReceipt, parseLiveProductBarcode, structuredClone, crypto: { randomUUID },
     HTMLInputElement: Element, HTMLTextAreaElement: Element, HTMLSelectElement: Element,
     localStorage: { getItem: (key: string) => key === 'token' ? demo.token : 'Demo One' },
     document: { createElement: (tag: string) => new Element(tag), getElementById: (id: string) => roots[id], querySelectorAll: () => [] },
-    navigator: {}, window: { addEventListener() {}, scrollTo() {}, setTimeout, clearTimeout }, clearTimeout,
+    navigator: {}, window: { addEventListener() {}, scrollTo() {}, setTimeout, clearTimeout, confirm(message: string) { confirmations.push(message); return confirm(message); } }, clearTimeout,
     fetch: (path: string, options: any = {}) => {
       const body = options.body ? JSON.parse(options.body) : undefined;
-      requests.push({ path, body });
+      requests.push({ path, body, method: options.method ?? 'GET' });
       const task = (async () => await intercept?.(path, body) ?? await fetch(demo.base + path, options))();
       pending.add(task); task.then(() => pending.delete(task), () => pending.delete(task)); return task;
     },
@@ -62,10 +63,10 @@ export async function client(demo: { base: string; token: string }, intercept?: 
     .replace(/^import .*;\r?\n/gm, '')
     .replace(/showSheetLink\(\);\r?\nif \(token\) start\(\); else renderLogin\(\);\s*$/, '');
   vm.createContext(context);
-  vm.runInContext(source + '\nglobalThis.ui = { renderReview, renderScan, renderSearch, renderHardware };', context);
+  vm.runInContext(source + '\nglobalThis.ui = { renderReview, renderScan, renderSearch, renderHardware, renderPart };', context);
   const all = () => roots.view.querySelectorAll('*');
   const find = (predicate: (el: Element) => boolean) => { const el = all().find(predicate); if (!el) throw new Error('Client control not found'); return el; };
-  return { ...context.ui, requests, view: roots.view,
+  return { ...context.ui, requests, confirmations, view: roots.view,
     button: (text: string) => find(el => el.tagName === 'BUTTON' && el.textContent === text),
     input: (label: string) => find(el => el.attrs['aria-label'] === label),
     all,

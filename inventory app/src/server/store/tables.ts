@@ -24,6 +24,8 @@ export interface TableStore {
   append(tab: TabId, rows: Row[]): Promise<void>;
   /** index is the 0-based data-row index returned by read(). */
   update(tab: TabId, index: number, row: Row): Promise<void>;
+  /** Permanently remove only rows whose part_id equals this exact id, across all five tabs. */
+  deleteByPartId(partId: string): Promise<void>;
 }
 
 export function toCells(tab: TabId, row: Row): string[] {

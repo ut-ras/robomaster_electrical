@@ -820,7 +820,8 @@ function renderHardware(opts: HardwareOpts) {
 
 // ---------- search ----------
 let lastQuery = '';
-function renderSearch() {
+function renderSearch(confirmation?: string) {
+  document.querySelectorAll<HTMLButtonElement>('#tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === 'search'));
   const q = h('input', { type: 'search', 'aria-label': 'Search inventory', placeholder: 'SKU, MPN, name, "M3 x 8 mm", drawer…', value: lastQuery, autocapitalize: 'off', autocorrect: 'off' }) as HTMLInputElement;
   const results = h('div');
   let t: number | undefined;
@@ -832,7 +833,8 @@ function renderSearch() {
     } catch (e) { results.replaceChildren(h('div', { class: 'notice bad' }, (e as Error).message)); }
   };
   q.addEventListener('input', () => { clearTimeout(t); t = window.setTimeout(run, 250); });
-  show(h('div', { class: 'card' }, h('h2', {}, 'Search inventory'), q,
+  show(confirmation ? h('div', { class: 'notice ok', role: 'status' }, confirmation) : null,
+    h('div', { class: 'card' }, h('h2', {}, 'Search inventory'), q,
     h('p', { class: 'muted' }, 'Try a supplier or McMaster part number, a part name, "100 nF capacitor, at least 25 V, ±10% or tighter", a size like "M3 x 8 mm" or 5/16", a drawer like "drawer A3", or "not specified" for parts with no drawer.')), results);
   run();
 }
@@ -874,8 +876,24 @@ async function renderPart(partId: string) {
   };
   const newDrawer = drawerPicker();
   const edit = manualSpecsEditor();
+  const partName = p.name || p.mpn || p.partId;
+  const deleteMsg = h('div', { 'aria-live': 'polite' });
+  const deleteBtn = h('button', { class: 'danger big' }, 'Delete part') as HTMLButtonElement;
+  deleteBtn.onclick = async () => {
+    if (deleteBtn.disabled) return;
+    if (!window.confirm(`Delete part "${partName}"?\n\nInventory ID: ${p.partId}\n\nThis permanently removes this part and all associated records: supplier SKUs, specs, locations, and its entire stock history. This cannot be undone.`)) return;
+    deleteBtn.disabled = true;
+    deleteMsg.replaceChildren(h('p', { role: 'status' }, 'Deleting part…'));
+    try {
+      await api(`/api/parts/${encodeURIComponent(p.partId)}`, { method: 'DELETE' });
+      renderSearch(`Deleted ${partName} (Inventory ID: ${p.partId}), including its stock history and associated records.`);
+    } catch (e) {
+      deleteBtn.disabled = false;
+      deleteMsg.replaceChildren(h('div', { class: 'notice bad', role: 'alert' }, `Deletion could not be confirmed: ${(e as Error).message}. You can retry the same deletion safely.`));
+    }
+  };
   show(
-    h('button', { class: 'link', onclick: renderSearch }, '‹ Back to search'),
+    h('button', { class: 'link', onclick: () => renderSearch() }, '‹ Back to search'),
     h('div', { class: 'card' },
       p.name ? h('h2', {}, p.name) : h('h2', { class: 'mono' }, p.mpn),
       h('div', {}, p.manufacturer ? `${p.manufacturer} · ` : '', h('span', { class: 'badge' }, categoryLabel(p.category)), p.name && p.mpn ? h('span', { class: 'mono' }, ` ${p.mpn}`) : null),
@@ -902,6 +920,8 @@ async function renderPart(partId: string) {
     } }, 'Save specs')),
     h('div', { class: 'card' }, h('h3', {}, 'Stock history'), p.history.length ? h('table', { class: 'specs' }, ...p.history.map((l: any) =>
       h('tr', {}, h('td', {}, new Date(l.timestamp).toLocaleString()), h('td', {}, l.member), h('td', {}, l.drawer), h('td', {}, Number(l.delta) > 0 ? `+${l.delta}` : l.delta)))) : h('p', { class: 'muted' }, 'No stock changes recorded.')),
+    h('div', { class: 'card' }, h('h3', {}, 'Permanently remove this part'),
+      h('p', { class: 'muted' }, 'For ordinary stock adjustments, use − Take above.'), deleteBtn, deleteMsg),
   );
 }
 
